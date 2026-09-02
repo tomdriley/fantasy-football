@@ -134,6 +134,65 @@ Build a **value-over-replacement optimizer with an opponent model**. Not a forec
    "who do I like" into "who will not be there in 18 picks".
 5. **Validation** — prove it beats the greedy baseline on a **non-circular** backtest.
 
+## Where the uncertainty actually comes from
+
+A live Monte Carlo simulation is only as meaningful as its variance model, so it is worth being
+explicit about which uncertainties exist and which are measurable. There are **two independent
+channels**, and they answer different questions. Conflating them is the classic error here.
+
+### Channel 1 — Opponent behaviour (drives *who is still on the board*)
+
+This is the only channel that affects a draft-day decision. Its components:
+
+| Source | Measurable? | Notes |
+|---|---|---|
+| Dispersion of human claim order around consensus | **No** | The API exposes six ADP fields and **every one is a mean**, for a different scoring format. No dispersion is published anywhere in the payload |
+| Roster-need conditioning | Partly | Opponents claim to fill *their own* unfilled slots. An agent holding 2 QBs will not take a third. Observable live from the pick feed |
+| Positional runs / cascades | **No** | Claims are correlated, not independent — once several items of a type go, more follow. i.i.d. sampling **understates** the variance of "how many RBs disappear before my next turn", which is precisely the quantity that matters |
+| Empty seats running autopick | **Yes — zero variance** | Up to 4 of 9 opponents may be fully deterministic |
+
+> **Trap, verified:** the field `adp_std` is **standard-scoring ADP, not a standard deviation.**
+> Confirmed decisively: high-reception receivers (Chase, 109 catches) sit *later* in `adp_std` than
+> in `adp_ppr`, while low-reception backs (Cook, 31 catches) sit *earlier* — the signature of
+> non-PPR scoring. Anyone reaching for `adp_std` as σ gets a silently broken simulation.
+
+### Channel 2 — Realized player outcomes (drives *whether the roster wins*)
+
+Injury, usage changes, and game context. This channel has **no effect on availability** and is
+therefore irrelevant to the pick decision itself. It matters for two other purposes: evaluating
+strategies in the backtest, and risk posture. Note the objective is subtly not "maximize expected
+points" — 6 of 10 agents reach the playoffs, so outcome variance carries option value when behind
+and is a liability when ahead.
+
+### Consequence: calibrate what you can, and prove indifference to the rest
+
+Attempts to calibrate Channel 1 empirically failed: crawling the league members' other leagues
+surfaced no completed 10-team drafts, so **σ is an unmeasurable free parameter.** The correct
+response is not to invent a precise value but to demonstrate the decision does not depend on it.
+
+Measured sensitivity (seat 5, claiming at pick 5 with the next turn at pick 16, an 11-pick gap),
+scoring each candidate by `VOR(now) + E[best VOR available at next turn]` under a Plackett–Luce
+opponent model with temperature τ:
+
+| Candidate | τ=1.5 | τ=4.0 | τ=10.0 |
+|---|---|---|---|
+| **Jahmyr Gibbs (RB)** | **250.7** | **258.1** | **291.1** |
+| Bijan Robinson (RB) | 244.3 | 252.2 | 286.1 |
+| Puka Nacua (WR) | 229.2 | 236.1 | 273.6 |
+| Ja'Marr Chase (WR) | 228.0 | 235.2 | 272.1 |
+
+Across a ~7× range of opponent randomness the EV *levels* move substantially (250 → 291) but the
+*ordering is unchanged*. The continuation value shifts almost equally for every candidate, so it
+cancels in the comparison. **The decision is robust to the parameter we cannot measure.**
+
+Two honest caveats: this was tested in round 1, where one candidate dominates on VOR — the easy
+case. The parameter is far more likely to bind in **middle rounds**, where candidates have similar
+VOR but different scarcity profiles, and that case must be tested before relying on it. Second, a
+naive additive-noise model (σ ∝ ADP) is **misspecified**: it gives an ADP-200 item σ=80, letting it
+be claimed 5th, which scatters claims across the whole board and absurdly reports ~95% survival for
+*everyone*. The opponent model must keep claims concentrated near the top of the board.
+
+
 ## Critical guardrails
 
 - **Circular evaluation is the primary failure mode.** If I let my optimizer draft using forecast
@@ -187,7 +246,12 @@ programmatically from the YAML so the two cannot drift apart.
 7. **vor-valuation** — Replacement baselines from true slot demand incl. wildcard slots, plus
    gap-based tiering (clustering items into value plateaus so near-equivalent choices are visible).
 8. **availability-model** — `P(available at my next turn)` from consensus-order dispersion;
-   deterministic special case for greedy/empty seats.
+   deterministic special case for greedy/empty seats. Includes a **Monte Carlo draft simulator**
+   (Plackett–Luce opponent model, roster-need conditioning, deterministic autopick seats) that runs
+   live against the in-progress pick feed. Must ship with a **σ-sensitivity report proving decision
+   stability**, since the dispersion parameter is not measurable from the API — see
+   "Where the uncertainty actually comes from". Mid-round stability is the case that still needs
+   testing.
 9. **draft-optimizer** — Expected constrained-lineup-value maximizer. Must not reproduce the naive
    max-payoff failure. Forces the two near-worthless types to the final rounds.
 10. **backtest-harness** — **Go/no-go gate.** Optimizer vs 9 greedy baseline agents, across many
