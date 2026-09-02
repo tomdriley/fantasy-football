@@ -193,6 +193,50 @@ be claimed 5th, which scatters claims across the whole board and absurdly report
 *everyone*. The opponent model must keep claims concentrated near the top of the board.
 
 
+## What gets precomputed (and what does not)
+
+The pre-draft state is uncertain in two ways: which seat we draw (10 options) and which of the 4
+currently-empty seats remain deterministic autopick bots. Counting bot *positions* among the other
+9 seats gives 10 × Σ⁴ⱼ₌₀ C(9,j) = 10 × 256 = **2560** states; counting only bot *count* gives
+10 × 5 = **50**. Neither is the right number to build for:
+
+- **Bot configuration is observed, not predicted.** `slot_to_roster_id` → `roster.owner_id is null`
+  identifies bot seats exactly. At draft time this is a single query, not an enumeration.
+- **Bot configuration barely changes decisions anyway.** Measured: going from 0 to 4 bots among the
+  11 intervening picks moved two-pick EV by ~4 points out of ~255 (1.6%) and never changed the
+  recommended claim. Survival probabilities shift ~0.1 in the sensible direction (stricter ADP
+  adherence ⇒ high-ADP items taken more reliably, mid-ADP items survive more often).
+- **Precomputed pick *sequences* are worthless regardless**, because the real board diverges from any
+  script within ~3 picks.
+
+So the precompute decomposes into three layers:
+
+| Layer | Count | Contents |
+|---|---|---|
+| Seat-invariant | **1** | Payoffs, VOR, replacement baselines, tier boundaries. ~99% of the compute |
+| Seat-dependent | **10** | Pick schedule and gap sizes — fully deterministic from the snake rule |
+| Live-only | — | Board state, opponent roster needs, bot identity — all observed during the draft |
+
+**Tiers are the compression mechanism.** The board has sharp natural breaks: RB tier 1 is exactly two
+items (Gibbs 160.4, Robinson 153.9) followed by a 34-point cliff; WR tier 1 is exactly two (Nacua
+138.9, Chase 137.5). A rule phrased as "claim the best available item from the highest live tier"
+is invariant to both seat and bot configuration because it *reacts* to the board instead of
+predicting it. That single rule replaces all 2560 scenarios.
+
+Seat schedule (rounds 1–6) showing why seats differ:
+
+| Seat | Picks | Gaps |
+|---|---|---|
+| 1 | 1, 20, 21, 40, 41, 60 | 19, 1, 19, 1, 19 |
+| 5 | 5, 16, 25, 36, 45, 56 | 11, 9, 11, 9, 11 |
+| 10 | 10, 11, 30, 31, 50, 51 | 1, 19, 1, 19, 1 |
+
+Seats 1 and 10 are structurally hardest: 19-pick gaps force reasoning two rounds ahead, and seat
+10's back-to-back picks are effectively one choice of two items. The printed fallback must be
+strongest for those seats.
+
+
+
 ## Critical guardrails
 
 - **Circular evaluation is the primary failure mode.** If I let my optimizer draft using forecast
