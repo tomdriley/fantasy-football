@@ -220,10 +220,49 @@ wastes ~95 points of value. **This is the trap the entire system exists to avoid
 | 11 | James Cook | RB | +89.8 |
 | 12 | Nico Collins | WR | +88.4 |
 
-**Validation signal:** this ordering closely tracks independent market consensus (Gibbs ADP 1.5,
-Bijan 2.5, Chase 3.2, Nacua 4.0). Two methods that share no inputs — our payoff/replacement
-computation, and the aggregated behaviour of thousands of human drafters — agree on the top of the
-board. That is meaningful evidence the pipeline is correct. Note that **no QB appears in the top 12**.
+**Sanity-check signal — and its limits:** this ordering tracks market consensus closely (Gibbs ADP
+1.5, Bijan 2.5, Chase 3.2, Nacua 4.0). Measured across the 178 players with ADP ≤ 180, ranking by
+raw projected payoff correlates with consensus order at **Spearman +0.738**, while ranking by value
+over replacement correlates at **+0.840**. The transform demonstrably moves the forecast *toward*
+consensus.
+
+Two caveats, stated plainly:
+
+- **This is not independent validation.** The forecasts and the consensus-order figures arrive in
+  the same payload from the same vendor, and — more importantly — human drafters *read projections
+  while drafting*. Consensus order is causally contaminated by the forecasts feeding this
+  computation. The agreement shows the scoring and replacement math is not producing garbage. It is
+  a check on the *transform*, not corroboration of the *forecasts*, and it is not evidence that the
+  strategy wins. Only the backtest against realized 2025 outcomes can establish that.
+- **The forecasts and consensus are genuinely different data**, though: correlation is far from 1.0,
+  and Josh Allen is the single highest projected payoff while sitting at consensus pick 21. If one
+  were derived from the other, that could not happen.
+
+Note that **no QB appears in the top 12**.
+
+### Where this ranking is provably wrong
+
+The largest disagreements against consensus are diagnostic, and two of them reveal real defects:
+
+| Item | Type | VOR rank | Consensus rank | Δ |
+|---|---|---|---|---|
+| Josh Jacobs | RB | 171 | 37 | −134 |
+| Chuba Hubbard | RB | 151 | 78 | −73 |
+| Detroit Lions | DEF | 85 | 157 | +72 |
+| Tyler Loop | K | 94 | 177 | +83 |
+| Will Reichard | K | 103 | 169 | +66 |
+
+1. **Value over replacement must never be used directly as the draft board.** It ranks kickers and
+   defenses around 85–103 while the market correctly buries them at 155+. The reason: a kicker's
+   +4 VOR still exceeds the *negative* VOR of a 150th-ranked receiver, so naive sorting claims a
+   kicker in round 9. VOR encodes *how much better than replacement* an item is, but carries no
+   notion of **when it can be obtained**. With 32 near-interchangeable kickers for 10 slots, the
+   scarcity constraint never binds, so the correct claim time is "last". Fixing this is exactly the
+   job of the availability model and the optimizer — VOR is an input to the decision, not the
+   decision.
+2. **Single-source forecast risk is real and visible.** Josh Jacobs is projected *below* replacement
+   while the market claims him 37th. One of the two is badly wrong. This is the concrete argument
+   for blending consensus order into the valuation rather than trusting one forecast provider.
 
 ---
 
@@ -239,6 +278,9 @@ board. That is meaningful evidence the pipeline is correct. Note that **no QB ap
 6. **Everything is conditional on the snake gap.** With an 18-pick gap the question is never "who is
    best" but "who survives".
 7. **Exploit the empty seats.** Up to 4 opponents may be fully deterministic.
+8. **Never sort the board by VOR alone.** It has no notion of when an item can be obtained, and
+   consequently over-values kickers and defenses by ~70 ranking positions (§7). VOR feeds the
+   optimizer; it is not itself the answer.
 
 ## 9. Open items
 

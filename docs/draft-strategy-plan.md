@@ -141,9 +141,17 @@ Build a **value-over-replacement optimizer with an opponent model**. Not a forec
   the result is meaningless. The backtest must claim items using **2025 pre-season consensus order**
   and score them using **2025 actual realized outcomes**. I verified that endpoint returns 3,305
   player-seasons of real results, so this is doable.
-- **Single-source forecast risk.** The forecasts come from one provider. Consensus order (ADP)
-  aggregates thousands of independent human drafters and is frequently the better estimator. Blend
-  the two rather than trusting the forecast vector alone.
+- **Single-source forecast risk.** The forecasts come from one provider, and the defect is already
+  visible: Josh Jacobs is projected *below replacement* while the market claims him 37th overall.
+  Consensus order (ADP) aggregates many human drafters and is frequently the better estimator, so
+  blend the two rather than trusting the forecast vector alone.
+- **Consensus order is NOT an independent check on the forecasts.** Both arrive in the same vendor
+  payload, and human drafters read projections while drafting, so ADP is causally contaminated by
+  the forecasts. Measured agreement (Spearman vs ADP: raw payoff +0.738, VOR +0.840) confirms the
+  transform is sane, but it cannot validate the forecasts. Only the realized-outcome backtest can.
+- **VOR is an input, not the draft board.** Sorted directly it ranks kickers/defenses ~70 positions
+  too high, because it measures *how much better than replacement* an item is with no notion of
+  *when it can be obtained*. The optimizer must supply that.
 - **Hard 60-second deadline.** All heavy computation happens beforehand; the live tool must respond
   in well under a second, and a printed fallback must exist in case anything breaks mid-draft.
 - **Unknown seat assignment.** Every deliverable must work for any of the 10 possible seats.
