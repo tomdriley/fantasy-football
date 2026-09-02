@@ -1,9 +1,20 @@
 # Git Blame Copilot — fantasy draft optimizer
 
 Tooling for a 10-team snake draft, treated as a sequential resource-allocation
-problem rather than a forecasting one. See [docs/draft-strategy-plan.md](docs/draft-strategy-plan.md)
-for the approach and [docs/league-rules.md](docs/league-rules.md) for the league
-parameters in plain language (no football knowledge assumed).
+problem rather than a forecasting one.
+
+## Documentation
+
+| Document | Question it answers |
+|---|---|
+| [Strategy plan](docs/draft-strategy-plan.md) | **Why** this approach, and why not machine-learned projections |
+| [League rules](docs/league-rules.md) | **What** the rules are, in plain language, assuming no football knowledge |
+| [Architecture](docs/architecture.md) | **How** the system is built: layering, budgets, failure modes |
+| [Product design](docs/product-design.md) | **What the operator experiences** during a timed live draft |
+| [league-rules.yaml](docs/league-rules.yaml) | Machine-readable rules. Source of truth for all code |
+
+Start with the strategy plan for the reasoning, or the product design doc for
+what the tool actually does on draft day.
 
 ## Layout
 
