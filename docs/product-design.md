@@ -116,20 +116,68 @@ holds exactly two players, then a 34-point cliff. Within a tier, choices are nea
 This directly serves the 99.7% human budget: it spends the operator's limited attention only on
 decisions that actually move the outcome.
 
-## 7. Encoded guardrails
+## 7. Encoded guardrails — and which ones are actually justified
 
-Football common sense the operator cannot supply, implemented as hard constraints:
+Football common sense the operator cannot supply. But "hard constraint" is a strong claim, so each
+rule below was tested rather than assumed. **They are not all the same kind of rule**, and treating
+them uniformly was a mistake in an earlier draft of this document.
 
-| Guardrail | Rationale |
-|---|---|
-| Never recommend K before the final round | Best kicker is worth ~4 points across an entire season |
-| Never recommend DEF before the second-to-last round | Best defense is worth ~18 points |
-| Never recommend a 2nd QB, or a 3rd TE | Only one starts; surplus scores zero |
-| Never fill all bench slots before all starting slots have a candidate | Unfielded items score zero |
-| Warn when a claim creates a bye-week collision among starters | Only 5 bench slots to absorb it |
-| Refuse claims already made by another agent | Guards against a stale board |
+### Three categories
 
-These are constraints, not preferences: the optimizer cannot trade them away for expected value.
+| Category | Enforcement | Why |
+|---|---|---|
+| **Legality** | Hard block | Violating produces an invalid action the platform rejects |
+| **Structural** | Hard block | Provably always true given the rules — a theorem, not a heuristic |
+| **Empirical** | **Warning** | Contingent on this season's data. Strength = the measured margin |
+
+### Measured opportunity cost (seat 5, median best-available VOR by round)
+
+| Round | Best non-K/DEF | Best DEF | Best K |
+|---|---|---|---|
+| 8 | 24.0 | 18.0 | 4.0 |
+| **9** | **7.8** | **18.0** | 4.0 |
+| 12 | −0.8 | 10.0 | 4.0 |
+| 15 | −7.7 | 4.0 | 2.0 |
+
+The correct comparison is not the level but the **cost of waiting** from round 9 to round 15:
+
+| | Value now | Value if we wait | Cost of waiting |
+|---|---|---|---|
+| Kicker | 4.0 | 2.0 | **2.0** |
+| Defense | 18.0 | 4.0 | **14.0** |
+| Everything else | 7.8 | −7.7 | **15.5** |
+
+### Verdicts
+
+| Rule | Verdict | Evidence |
+|---|---|---|
+| **Kicker last** | **Justified — hard block** | Waiting costs 2.0 points. 150 kickers go undrafted. Effectively free |
+| **Defense second-to-last** | **NOT justified — downgrade to warning** | Waiting costs 14.0 vs 15.5 for the field: nearly a wash. From round 9 the best defense (+18) genuinely beats the best remaining player (+7.8). Only 25 defenses go undrafted, so supply is far tighter than kickers |
+| **Never a 2nd QB** | **Justified — but scoped, and for a different reason than assumed** | A backup covering the starter's single bye week is worth ~17 points, comparable to the best defense — so "no value" is wrong. It is justified only because **338 QBs go undrafted**, so one can be added from waivers for that week at zero draft cost. Scope the rule to "not before starting slots are filled" |
+| **Never a 3rd TE** | Justified — same waiver logic | Surplus at a 1-slot type, with deep waivers |
+| **Starters before bench** | **Structural — hard block** | An unfilled starting slot scores zero; a bench item also scores zero. Filling bench first is dominated by definition |
+| **Bye-week collision** | Warning (already correct) | Only 5 bench slots to absorb it; depends on the specific roster |
+| **Already-claimed item** | **Legality — hard block** | Guards against a stale board |
+
+### The underlying principle
+
+**If the objective function is correct, most of these should emerge on their own.** A guardrail that
+duplicates a correct objective is redundant; one that *contradicts* it is masking a modelling bug.
+Hard-coding an empirical heuristic destroys the signal — if the optimizer wants a kicker in round 2,
+that is a bug worth seeing, not suppressing.
+
+So empirical rules are **warnings that surface the reasoning**, not silent blocks:
+
+```
+   NOTE  Defense (+18.0) currently outranks the best available player (+7.8).
+         This is unusual before round 12 but is supported here: waiting until
+         round 15 costs 14 points, and only 25 defenses go undrafted.
+```
+
+The one concession to the operator's inability to detect errors (§1): a **circuit breaker** on
+catastrophic actions — claiming a kicker in the first half of the draft, or a fourth player at a
+one-slot type. It blocks and logs loudly. It exists to catch a crash-level bug at 4pm tomorrow, not
+to encode strategy.
 
 ## 8. Pre-draft deliverable: the printed sheet
 

@@ -146,7 +146,9 @@ Current: 16 tests, ~0.5 s.
 3. `adp_*` fields are **never** treated as scoreable stats, and `adp_std` is standard-*scoring*
    ADP, not a standard deviation.
 4. VOR is an input to the decision, never the claim order itself.
-5. The backtest never scores with the same forecast vector that drove its claims.
+5. Guardrails are typed: legality and structural rules block; empirical heuristics only warn.
+   An empirical rule that has to block is evidence of a bug in the objective function.
+6. The backtest never scores with the same forecast vector that drove its claims.
 
 ## 10. Deferred / out of scope
 
