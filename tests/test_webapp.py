@@ -1,0 +1,353 @@
+"""Tests for the HTTP interface.
+
+These drive a real server over real sockets rather than calling handlers
+directly, because the failure modes that matter on draft day -- a malformed
+body, a dead endpoint, two requests racing -- live in the transport layer as
+much as in the logic.
+"""
+
+from __future__ import annotations
+
+import json
+import pathlib
+import tempfile
+import threading
+import unittest
+import urllib.error
+import urllib.request
+
+from ffopt import pool, session, webapp
+
+
+def _item(pid, name, pos, adp, payoff=200.0):
+    return pool.Item(player_id=pid, name=name, pos=pos, team="TM",
+                     payoff=payoff, adp=adp, games=17.0)
+
+
+_NAMES = [
+    "Ashford", "Brennan", "Calloway", "Danforth", "Ellsworth", "Fairbank",
+    "Garrity", "Halloran", "Ingersoll", "Jessup", "Kirkland", "Lamonte",
+    "Merriweather", "Northcott", "Ollivander", "Prescott", "Quimby",
+    "Ravensworth", "Sutherland", "Thorncastle",
+]
+
+
+def _board():
+    items, n = [], 1
+    for pos, count, base in (("RB", 40, 300.0), ("WR", 40, 290.0), ("TE", 40, 200.0),
+                             ("QB", 40, 320.0), ("K", 20, 80.0), ("DEF", 20, 110.0)):
+        for i in range(count):
+            items.append(_item(str(n), f"{_NAMES[i % len(_NAMES)]}{pos}{i}", pos,
+                               float(n), base - i * 4))
+            n += 1
+    return items
+
+
+class WebTestCase(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        tmp = pathlib.Path(tempfile.mkdtemp()) / "session.json"
+        sess = session.DraftSession(board=_board(), path=tmp)
+        cls.service = webapp.DraftService(sess)
+        cls.server = webapp.serve(0, cls.service)
+        cls.port = cls.server.server_address[1]
+        cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
+        cls.thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.server.server_close()
+
+    def setUp(self):
+        self.service.session.reset()
+        self.service.session.set_seat(None)
+        self.service.session.set_mode("live")
+        self.service.invalidate()
+
+    # -- helpers --------------------------------------------------------
+    def url(self, path):
+        return f"http://127.0.0.1:{self.port}{path}"
+
+    def get(self, path):
+        try:
+            with urllib.request.urlopen(self.url(path), timeout=30) as r:
+                return r.status, json.load(r)
+        except urllib.error.HTTPError as e:
+            return e.code, json.load(e)
+
+    def post(self, path, payload=None, raw=None):
+        data = raw if raw is not None else json.dumps(payload or {}).encode()
+        req = urllib.request.Request(
+            self.url(path), data=data,
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return r.status, json.load(r)
+        except urllib.error.HTTPError as e:
+            return e.code, json.load(e)
+
+
+class TestStaticAndRouting(WebTestCase):
+    def test_index_is_served(self):
+        with urllib.request.urlopen(self.url("/"), timeout=30) as r:
+            body = r.read().decode()
+        self.assertEqual(r.status, 200)
+        self.assertIn("Git Blame Copilot", body)
+
+    def test_assets_are_served(self):
+        for asset, needle in (("/app.js", "panic"), ("/style.css", "--accent")):
+            with urllib.request.urlopen(self.url(asset), timeout=30) as r:
+                self.assertEqual(r.status, 200)
+                self.assertIn(needle, r.read().decode())
+
+    def test_unknown_api_endpoint_is_404(self):
+        status, body = self.get("/api/nope")
+        self.assertEqual(status, 404)
+        self.assertIn("error", body)
+
+    def test_directory_traversal_is_refused(self):
+        for path in ("/../ffopt/config.py", "/../../etc/passwd"):
+            try:
+                with urllib.request.urlopen(self.url(path), timeout=30) as r:
+                    self.assertNotIn("SECRET", r.read().decode())
+                    self.assertNotEqual(r.status, 200)
+            except urllib.error.HTTPError as e:
+                self.assertEqual(e.code, 404)
+
+
+class TestState(WebTestCase):
+    def test_state_shape(self):
+        status, body = self.get("/api/state")
+        self.assertEqual(status, 200)
+        for key in ("mode", "seat", "picks_made", "total_picks", "current_pick",
+                    "my_turn", "complete", "roster", "unfilled", "recent"):
+            self.assertIn(key, body)
+
+    def test_set_seat_and_mode(self):
+        _, body = self.post("/api/seat", {"seat": 4})
+        self.assertEqual(body["state"]["seat"], 4)
+        _, body = self.post("/api/mode", {"mode": "manual"})
+        self.assertEqual(body["state"]["mode"], "manual")
+
+    def test_invalid_seat_returns_400(self):
+        status, body = self.post("/api/seat", {"seat": 99})
+        self.assertEqual(status, 400)
+        self.assertFalse(body["ok"])
+
+    def test_invalid_mode_returns_400(self):
+        status, _ = self.post("/api/mode", {"mode": "wizardry"})
+        self.assertEqual(status, 400)
+
+
+class TestClaiming(WebTestCase):
+    def test_claim_by_query(self):
+        status, body = self.post("/api/claim", {"query": "AshfordRB0"})
+        self.assertEqual(status, 200)
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["state"]["picks_made"], 1)
+
+    def test_claim_by_id(self):
+        _, body = self.post("/api/claim", {"player_id": "1"})
+        self.assertTrue(body["ok"])
+
+    def test_duplicate_reports_already_taken(self):
+        self.post("/api/claim", {"player_id": "1"})
+        status, body = self.post("/api/claim", {"player_id": "1"})
+        self.assertEqual(status, 400)
+        self.assertIn("already", body["error"])
+
+    def test_ambiguous_query_returns_options(self):
+        status, body = self.post("/api/claim", {"query": "Ashford"})
+        self.assertFalse(body["ok"])
+        self.assertTrue(body["ambiguous"])
+        self.assertGreater(len(body["results"]), 1)
+        self.assertEqual(body["state"]["picks_made"], 0, "must not claim on ambiguity")
+
+    def test_unknown_query_reports_no_match(self):
+        _, body = self.post("/api/claim", {"query": "zzzznotaplayer"})
+        self.assertFalse(body["ok"])
+        self.assertIn("no match", body["error"])
+
+    def test_claim_without_arguments_is_rejected(self):
+        status, body = self.post("/api/claim", {})
+        self.assertEqual(status, 400)
+        self.assertFalse(body["ok"])
+
+    def test_malformed_json_does_not_crash(self):
+        status, body = self.post("/api/claim", raw=b"{not json at all")
+        self.assertEqual(status, 400)
+        self.assertIn("error", body)
+
+    def test_empty_body_does_not_crash(self):
+        status, _ = self.post("/api/claim", raw=b"")
+        self.assertEqual(status, 400)
+
+
+class TestCorrections(WebTestCase):
+    def setUp(self):
+        super().setUp()
+        for pid in ("1", "2", "3"):
+            self.post("/api/claim", {"player_id": pid})
+
+    def test_undo(self):
+        _, body = self.post("/api/undo")
+        self.assertEqual(body["state"]["picks_made"], 2)
+
+    def test_correct(self):
+        _, body = self.post("/api/correct", {"pick": 2, "player_id": "50"})
+        self.assertTrue(body["ok"])
+        recent = {r["pick"]: r["player_id"] for r in body["state"]["recent"]}
+        self.assertEqual(recent[2], "50")
+
+    def test_insert_shifts_and_changes_ownership(self):
+        self.post("/api/seat", {"seat": 3})
+        _, before = self.get("/api/state")
+        self.assertEqual([p["player_id"] for p in before["roster"]], ["3"])
+        _, body = self.post("/api/insert", {"pick": 1, "player_id": "60"})
+        self.assertEqual([p["player_id"] for p in body["state"]["roster"]], ["2"])
+
+    def test_remove(self):
+        _, body = self.post("/api/remove", {"pick": 1})
+        self.assertEqual(body["state"]["picks_made"], 2)
+
+    def test_out_of_range_pick_returns_400(self):
+        status, body = self.post("/api/correct", {"pick": 99, "player_id": "50"})
+        self.assertEqual(status, 400)
+        self.assertIn("state", body, "the client still needs current state on error")
+
+    def test_missing_field_returns_400(self):
+        status, _ = self.post("/api/correct", {"pick": 1})
+        self.assertEqual(status, 400)
+
+    def test_reset(self):
+        _, body = self.post("/api/reset")
+        self.assertEqual(body["state"]["picks_made"], 0)
+
+
+class TestAdviceEndpoints(WebTestCase):
+    def test_panic_is_fast_and_never_empty(self):
+        import time
+        self.post("/api/seat", {"seat": 5})
+        start = time.perf_counter()
+        status, body = self.get("/api/panic")
+        elapsed = time.perf_counter() - start
+        self.assertEqual(status, 200)
+        self.assertTrue(body["picks"])
+        self.assertLess(elapsed, 2.0)
+
+    def test_panic_works_with_no_seat_set(self):
+        status, body = self.get("/api/panic")
+        self.assertEqual(status, 200)
+        self.assertTrue(body["picks"])
+
+    def test_recommend_returns_picks(self):
+        self.post("/api/seat", {"seat": 5})
+        status, body = self.get("/api/recommend?trials=2")
+        self.assertEqual(status, 200)
+        self.assertTrue(body["picks"])
+
+    def test_recommend_is_cached_between_calls(self):
+        self.post("/api/seat", {"seat": 5})
+        _, first = self.get("/api/recommend?trials=2")
+        _, second = self.get("/api/recommend?trials=2")
+        self.assertEqual([p["player_id"] for p in first["picks"]],
+                         [p["player_id"] for p in second["picks"]])
+
+    def test_cache_is_invalidated_by_a_claim(self):
+        self.post("/api/seat", {"seat": 5})
+        _, first = self.get("/api/recommend?trials=2")
+        top = first["picks"][0]["player_id"]
+        self.post("/api/claim", {"player_id": top})
+        _, second = self.get("/api/recommend?trials=2")
+        self.assertNotIn(top, [p["player_id"] for p in second["picks"]],
+                         "a claimed player must not still be recommended")
+
+    def test_absurd_trial_count_is_clamped(self):
+        self.post("/api/seat", {"seat": 5})
+        status, _ = self.get("/api/recommend?trials=999999")
+        self.assertEqual(status, 200)
+
+    def test_search_endpoint(self):
+        status, body = self.get("/api/search?q=AshfordRB0")
+        self.assertEqual(status, 200)
+        self.assertEqual(len(body["results"]), 1)
+
+    def test_search_with_empty_query(self):
+        status, body = self.get("/api/search?q=")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["results"], [])
+
+
+class TestConcurrency(WebTestCase):
+    def test_parallel_claims_do_not_corrupt_the_board(self):
+        """Two clients (or a double-click) must not produce a duplicate."""
+        results = []
+
+        def claim():
+            results.append(self.post("/api/claim", {"player_id": "1"}))
+
+        threads = [threading.Thread(target=claim) for _ in range(6)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        successes = [r for r in results if r[1].get("ok")]
+        self.assertEqual(len(successes), 1, "exactly one claim may succeed")
+        _, state = self.get("/api/state")
+        self.assertEqual(state["picks_made"], 1)
+
+    def test_reads_during_writes_stay_consistent(self):
+        errors = []
+
+        def reader():
+            for _ in range(20):
+                try:
+                    status, body = self.get("/api/state")
+                    if status != 200 or "picks_made" not in body:
+                        errors.append(body)
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(str(exc))
+
+        def writer():
+            for pid in range(1, 15):
+                self.post("/api/claim", {"player_id": str(pid)})
+
+        threads = [threading.Thread(target=reader), threading.Thread(target=writer)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(errors, [])
+
+
+class TestSyncDegradation(WebTestCase):
+    def test_sync_failure_returns_a_usable_response(self):
+        from ffopt import client
+        original = client.draft_picks
+        client.draft_picks = lambda _d: (_ for _ in ()).throw(OSError("no network"))
+        try:
+            status, body = self.post("/api/sync")
+        finally:
+            client.draft_picks = original
+        self.assertEqual(status, 200)
+        self.assertFalse(body["ok"])
+        self.assertIn("state", body, "the interface must keep working offline")
+
+    def test_claims_survive_a_failed_sync(self):
+        from ffopt import client
+        self.post("/api/claim", {"player_id": "1"})
+        original = client.draft_picks
+        client.draft_picks = lambda _d: (_ for _ in ()).throw(OSError("no network"))
+        try:
+            self.post("/api/sync")
+        finally:
+            client.draft_picks = original
+        _, state = self.get("/api/state")
+        self.assertEqual(state["picks_made"], 1)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

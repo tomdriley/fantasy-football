@@ -187,3 +187,6 @@ draft-sheet.txt
 
 # Manual draft board (regenerated per draft)
 data/manual-board.json
+
+# Web session state (regenerated per draft)
+data/session.json

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Git Blame Copilot — Draft</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header>
+  <div class="brand">Git Blame Copilot</div>
+  <div class="controls">
+    <label>Mode
+      <select id="mode" title="live: poll the league API. assisted: poll, but you can also type picks. manual: you type everything.">
+        <option value="live">live</option>
+        <option value="assisted">assisted</option>
+        <option value="manual">manual</option>
+      </select>
+    </label>
+    <label>Seat
+      <select id="seat"><option value="">?</option></select>
+    </label>
+    <span id="conn" class="pill offline">offline</span>
+  </div>
+</header>
+
+<main>
+  <section id="advice" class="card wide">
+    <div class="advice-head">
+      <h1 id="turn">Loading…</h1>
+      <div id="clock" class="clock"></div>
+    </div>
+
+    <ol id="picks" class="picks"></ol>
+
+    <div class="meta">
+      <span id="stakes" class="tag"></span>
+      <span id="sanity" class="tag"></span>
+      <span id="why" class="tag"></span>
+    </div>
+
+    <button id="panic" class="panic" title="Instant pick, no waiting. Use when the clock is nearly out or the board looks wrong.">
+      PANIC — give me a pick now
+    </button>
+    <div id="panicOut" class="panic-out hidden"></div>
+  </section>
+
+  <section class="card">
+    <h2>Enter a pick</h2>
+    <p class="hint">Type a surname as each pick happens. Works offline.</p>
+    <div class="entry">
+      <input id="q" type="text" autocomplete="off" spellcheck="false"
+             placeholder="e.g. gibbs" aria-label="player name">
+      <button id="add" class="primary">Add</button>
+    </div>
+    <div id="suggest" class="suggest"></div>
+    <div id="entryMsg" class="msg"></div>
+
+    <h2>Recent picks <span class="hint">— click Fix if you mistyped</span></h2>
+    <ul id="recent" class="recent"></ul>
+    <div class="row">
+      <button id="undo" class="ghost">Undo last</button>
+      <button id="sync" class="ghost">Sync from API</button>
+      <button id="reset" class="ghost danger">Reset board</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>My roster</h2>
+    <div id="slots" class="slots"></div>
+    <ol id="roster" class="roster"></ol>
+    <div id="warn" class="warn hidden"></div>
+  </section>
+</main>
+
+<div id="fixDialog" class="modal hidden">
+  <div class="modal-box">
+    <h2>Fix pick <span id="fixPick"></span></h2>
+    <p class="hint">Replace who was taken, or remove the pick entirely if it never happened.</p>
+    <input id="fixQuery" type="text" autocomplete="off" placeholder="correct player">
+    <div id="fixSuggest" class="suggest"></div>
+    <div class="row">
+      <button id="fixApply" class="primary">Replace</button>
+      <button id="fixRemove" class="ghost danger">Remove pick</button>
+      <button id="fixCancel" class="ghost">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <span id="status">starting…</span>
+  <span class="hint">Enter = add · P = panic · U = undo</span>
+</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>
