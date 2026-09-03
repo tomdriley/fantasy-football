@@ -199,7 +199,7 @@ seconds. That means **tiers and rules**, not a ranked list of 200 names.
 | What they experience | What the product does |
 |---|---|
 | Tool shows stale board | Timestamp on screen; loud staleness warning past 15 s |
-| Network drops mid-draft | Serve last-known board, clearly marked; recommendations still computed |
+| Network drops mid-draft | After 3 failed polls the tool switches itself to manual entry, seeded with the picks already retrieved. Type a surname as each pick happens; lookup is fuzzy, so "gibbs" or even "gibs" resolves. Ambiguous names offer a numbered choice. `undo` reverses a mistype, and the board is saved after every entry so a crash loses nothing |
 | Tool crashes | Printed sheet |
 | Recommendation looks strange | SANITY line explains the deviation and its cause |
 | Timer nearly expired | Big clear "TAKE" marker on option 1 — one unambiguous action |

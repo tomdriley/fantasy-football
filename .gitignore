@@ -184,3 +184,6 @@ data/cache/
 
 # Generated draft artifacts
 draft-sheet.txt
+
+# Manual draft board (regenerated per draft)
+data/manual-board.json

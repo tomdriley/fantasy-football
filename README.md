@@ -44,6 +44,7 @@ reasoning, or the product design doc for what the tool does on draft day.
 | `ffopt/shrinkage.py` | Shrinks forecasts toward market prior (counters selection bias) |
 | `ffopt/cheatsheet.py` | Printable paper fallback |
 | `ffopt/live.py` | Live draft advisor |
+| `ffopt/manual.py` | Manual board entry if the pick feed fails |
 
 ## Running
 
@@ -55,7 +56,14 @@ python3 -m unittest discover -s tests -v      # 57 tests, ~1s
 python3 scripts/make_sheet.py                 # printable draft sheet
 python3 scripts/draft.py --seat 5 --once      # one live recommendation
 python3 scripts/draft.py                      # poll continuously during the draft
+python3 scripts/draft.py --manual --seat 5    # enter opponents' picks by hand
 ```
+
+If the pick feed fails three times in a row the tool switches to manual entry on
+its own, keeping the picks it already has. In manual mode type a surname as each
+pick happens (`gibbs`), prefix your own with `me` (`me gibbs`), and use `undo`,
+`board`, `sync` or `reset`. The board is saved after every entry, so a crash
+mid-draft loses nothing.
 
 API responses cache under `data/cache/` (gitignored), so the 60-second draft
 timer is never spent re-fetching reference data.

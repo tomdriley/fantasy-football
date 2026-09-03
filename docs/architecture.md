@@ -118,7 +118,7 @@ Ordered by severity. Each layer falls back to the one below.
 | Failure | Detection | Degradation |
 |---|---|---|
 | Projection endpoint down | Fetch raises | Serve from 12 h cache |
-| Pick feed slow/unavailable | 10 s timeout | Manual board entry; recommendations still computed |
+| Pick feed slow/unavailable | 10 s timeout, 3 consecutive failures | **Automatic switch to manual entry** (`ffopt/manual.py`); whatever the feed already returned is kept, and recommendations continue |
 | Draft order differs from expectation | Cross-check `slot_to_roster_id` | Seat is a runtime parameter; recompute |
 | Optimizer throws | Exception at L5 | Fall back to static tier ordering from L3 |
 | Python environment broken | Tool won't start | **Printed cheat sheet** — the final fallback |
