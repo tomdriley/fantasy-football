@@ -9,8 +9,8 @@ Companion to [architecture.md](./architecture.md) (how the system is structured)
 that matters for correctness.
 
 > **Status: VALIDATED ACROSS FIVE SEASONS, WITH ADVERSARIAL CHECKS.** Against realized outcomes for
-> 2021–2025 the engine beats the platform's autopick by **+7.5%** and a competent human heuristic by
-> **+8.4%**, winning 174/200 configurations (t=14.2, bootstrap 95% CI [+150, +199] points, excluding
+> 2021–2025 the engine beats the platform's autopick by **+9.0%** and a competent human heuristic by
+> **+10.0%**, winning 172/200 configurations (t=15.8, bootstrap 95% CI [+186, +239] points, excluding
 > zero). It is positive in **every** season. It survives a placebo test (edge vanishes to t=0.63 when
 > outcomes are decoupled from picks) and a mixed-population test (+9.1% when half the league also
 > optimises, so it is not merely exploiting a weak opponent). The gain is distributed across
@@ -292,14 +292,14 @@ A/B: one seat varies strategy, the other nine run autopick, identical seeds.
 
 | Season | autopick | heuristic | optimizer | vs autopick | vs heuristic |
 |---|---|---|---|---|---|
-| 2021 | 2371 | 2356 | **2521** | **+6.3%** | +7.0% |
-| 2022 | 2313 | 2408 | **2457** | **+6.2%** | +2.0% |
-| 2023 | 2341 | 2297 | **2553** | **+9.1%** | +11.2% |
-| 2024 | 2361 | 2370 | **2685** | **+13.7%** | +13.3% |
-| 2025 | 2301 | 2154 | **2345** | **+1.9%** | +8.9% |
-| **pooled** | **2337** | **2317** | **2512** | **+7.5%** | **+8.4%** |
+| 2021 | 2371 | 2356 | **2570** | **+8.4%** | +9.1% |
+| 2022 | 2313 | 2408 | **2564** | **+10.8%** | +6.5% |
+| 2023 | 2341 | 2297 | **2588** | **+10.6%** | +12.7% |
+| 2024 | 2361 | 2370 | **2679** | **+13.5%** | +13.0% |
+| 2025 | 2301 | 2154 | **2342** | **+1.8%** | +8.7% |
+| **pooled** | **2337** | **2317** | **2548** | **+9.0%** | **+10.0%** |
 
-174/200 configurations won, t=14.2, **bootstrap 95% CI [+150, +199] points** — comfortably excluding
+172/200 configurations won, t=15.8, **bootstrap 95% CI [+186, +239] points** — comfortably excluding
 zero. `heuristic` is the honest human baseline (fill starters first by consensus, kicker last,
 defense second to last); it is reported here because beating only a machine default would be a weak
 claim.
@@ -322,6 +322,25 @@ the exact-match rate is 1–2% for 2021–2025 against 17% for 2019–2020.
 An earlier version of this audit flagged *every* season as suspect at ~10%, which was a false
 positive: it counted players who scored near zero and were projected near zero, who trivially agree.
 Restricting to producing players separates the signal cleanly.
+
+### The waiver assumption: pessimism dominates
+
+Whether an unfilled starting slot can be covered by adding a free agent that week was an open
+question, intended to be settled by asking the operator. Measurement removed the question:
+
+| Objective assumes | if roster IS managed | if roster is NOT managed |
+|---|---|---|
+| streaming available (realistic) | +7.9% | +7.7% |
+| **empty slot scores zero (pessimistic)** | **+9.1%** | **+10.0%** |
+
+The pessimistic assumption is not a hedge trading average for safety — it **dominates in both
+worlds**. Mechanism: crediting an empty slot at free-agent level makes leaving one empty look cheap,
+which leaves a mandatory slot unfilled in ~1/3 of drafts. Assuming it scores nothing fills every slot
+every time, and that slot is worth more than the marginal player gained by skipping it.
+
+Deciding and scoring therefore use *different* waiver assumptions, which is correct rather than
+inconsistent: the realistic baselines describe what a roster is worth, the pessimistic one produces
+better decisions.
 
 ### Adversarial checks
 

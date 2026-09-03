@@ -73,3 +73,32 @@ class TestRulesDocMatchesSource(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestPlainLanguageDoc(unittest.TestCase):
+    """The onboarding document must stay usable by a non-expert."""
+
+    @classmethod
+    def setUpClass(cls):
+        raw = (DOCS / "how-this-works.md").read_text()
+        cls.flat = " ".join(raw.split())
+
+    def test_defines_every_position_abbreviation(self):
+        for position in ("QB", "RB", "WR", "TE", "K", "DEF"):
+            self.assertIn(position, self.flat)
+        for term in ("quarterback", "running back", "wide receiver", "tight end", "kicker"):
+            self.assertIn(term, self.flat.lower())
+
+    def test_explains_the_central_trap(self):
+        self.assertIn("value over replacement", self.flat.lower())
+        self.assertIn("Do not take a quarterback early", self.flat)
+
+    def test_states_the_bench_scores_zero(self):
+        self.assertIn("score exactly zero", self.flat)
+
+    def test_keeps_the_honest_caveat(self):
+        self.assertIn("edge, not a guarantee", self.flat)
+
+    def test_tells_the_operator_what_to_do(self):
+        self.assertIn("scripts/draft.py", self.flat)
+        self.assertIn("--manual", self.flat)

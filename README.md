@@ -7,6 +7,7 @@ problem rather than a forecasting one.
 
 | Document | Question it answers |
 |---|---|
+| [**How this works**](docs/how-this-works.md) | **Start here.** What the game is and what the software does, assuming no football knowledge |
 | [Algorithm](docs/algorithm.md) | **The objective function and decision rule, as equations.** Written to be audited: every parameter's source, every approximation ranked by how much it is distrusted |
 | [Strategy plan](docs/draft-strategy-plan.md) | **Why** this approach, and why not machine-learned projections |
 | [League rules](docs/league-rules.md) | **What** the rules are, in plain language, assuming no football knowledge |
@@ -14,13 +15,13 @@ problem rather than a forecasting one.
 | [Product design](docs/product-design.md) | **What the operator experiences** during a timed live draft |
 | [league-rules.yaml](docs/league-rules.yaml) | Machine-readable rules. Source of truth for all code |
 
-Start with the **algorithm doc** to audit correctness, the strategy plan for the
-reasoning, or the product design doc for what the tool does on draft day.
+New to the topic? Read [how-this-works.md](docs/how-this-works.md) first. To audit
+correctness go to the algorithm doc; for draft-day mechanics, the product design doc.
 
 > **Validated across five seasons (2021-2025), with adversarial checks.** The
-> optimizer beats the platform autopick by **+7.5%** and a competent human
-> heuristic by **+8.4%**, winning 174/200 controlled configurations
-> (bootstrap 95% CI [+150, +199] points). Positive in every season. It survives
+> optimizer beats the platform autopick by **+9.0%** and a competent human
+> heuristic by **+10.0%**, winning 172/200 controlled configurations
+> (bootstrap 95% CI [+186, +239] points). Positive in every season. It survives
 > a placebo test and still wins when half the league also optimises. Two further
 > seasons were examined and excluded for data contamination. The edge tracks
 > forecast quality and ranged from +2% to +14%, so the low end is entirely
