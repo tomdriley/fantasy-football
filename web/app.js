@@ -86,6 +86,23 @@ function renderState(s) {
     : gap === 0 ? 'you are on the clock'
     : `your next pick is ${s.next_pick_number} (${gap} away)`;
 
+  // A board that is not empty at startup is either a legitimate resume or
+  // leftover state. The operator cannot tell which, so say so explicitly the
+  // first time rather than letting it look like the draft already began.
+  if (!App.greeted) {
+    App.greeted = true;
+    if (s.picks_made > 0) {
+      const box = $('proposal');
+      $('proposalText').innerHTML =
+        `Resumed a board with <b>${s.picks_made}</b> pick(s) already recorded. ` +
+        `If this draft has not started yet, clear it.`;
+      $('acceptProposal').textContent = 'Keep it';
+      $('dismissProposal').textContent = 'Clear board';
+      box.classList.remove('hidden');
+      App.resumePrompt = true;
+    }
+  }
+
   renderSlots(s);
   renderRoster(s);
   renderRecent(s);
@@ -491,12 +508,26 @@ function bind() {
     refreshAdvice(true);
   };
   $('acceptProposal').onclick = async () => {
+    if (App.resumePrompt) {
+      App.resumePrompt = false;
+      $('proposal').classList.add('hidden');
+      return;
+    }
     const r = await post('/api/sync');
     if (r.body && r.body.state) renderState(r.body.state);
     $('proposal').classList.add('hidden');
     refreshAdvice(true);
   };
-  $('dismissProposal').onclick = () => $('proposal').classList.add('hidden');
+  $('dismissProposal').onclick = async () => {
+    if (App.resumePrompt) {
+      App.resumePrompt = false;
+      const r = await post('/api/reset');
+      if (r.body && r.body.state) renderState(r.body.state);
+      entryMsg('board cleared', false);
+      refreshAdvice(true);
+    }
+    $('proposal').classList.add('hidden');
+  };
   $('fixCancel').onclick = closeFix;
   $('fixApply').onclick = applyFixFromQuery;
   $('fixRemove').onclick = removeFix;

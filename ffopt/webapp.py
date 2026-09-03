@@ -265,9 +265,19 @@ def make_handler(service: DraftService) -> type[BaseHTTPRequestHandler]:
     return Handler
 
 
-def build_service(load_board: bool = True) -> DraftService:
+def build_service(load_board: bool = True, fresh: bool = False) -> DraftService:
+    """Build the service, optionally discarding any saved board.
+
+    Whether a previous board was restored is reported by the caller, because
+    silently resuming a board the operator did not expect is far worse than
+    starting empty: it looks like the draft is already underway.
+    """
     sess = session.DraftSession()
-    sess.load()
+    if fresh:
+        sess.reset()
+        sess.restored = False
+    else:
+        sess.restored = sess.load()
     if load_board:
         sess.load_board()
     return DraftService(sess)

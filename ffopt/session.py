@@ -42,6 +42,11 @@ DEFAULT_LAMBDA = 0.7
 #: Rollout depth, matching the validated backtest setting.
 DEFAULT_HORIZON = 8
 
+#: How old a saved board may be and still be treated as a draft in progress.
+#: A draft lasts under an hour and is resumed within seconds of a crash, so
+#: anything older is leftover state rather than something to restore.
+STATE_MAX_AGE = 6 * 3600
+
 
 class SessionError(ValueError):
     """Raised for operator errors that should be reported, not crash the app."""
@@ -69,6 +74,7 @@ class DraftSession:
         self.claims: list[Claim] = []
         self.last_sync_error: str | None = None
         self.last_sync_at: float | None = None
+        self.stale_state_reason: str | None = None
         self._board: list[pool.Item] = list(board) if board is not None else []
         self._by_id: dict[str, pool.Item] = {}
         self._vor: dict[str, float] = {}
@@ -480,6 +486,8 @@ class DraftSession:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "draft_id": self.cfg.draft_id,
+            "api_base": client.API_V1,
+            "saved_at": time.time(),
             "mode": self.mode,
             "seat": self.seat,
             "claims": [[c.player_id, c.source, c.at] for c in self.claims],
@@ -489,7 +497,19 @@ class DraftSession:
             json.dump(payload, f)
         tmp.replace(self.path)
 
-    def load(self) -> bool:
+    def load(self, max_age: float = STATE_MAX_AGE) -> bool:
+        """Restore a board saved earlier in *this* draft.
+
+        Three guards, each closing a way a stale file could silently seed a
+        fresh session with picks that never happened:
+
+        * the draft id must match, so another league's board is never adopted;
+        * the API base must match, so a board built against a mock draft server
+          is never restored into a session pointed at the real platform;
+        * the file must be recent, because a board hours old is a leftover from
+          testing rather than a draft in progress -- a draft lasts under an hour
+          and is resumed within seconds of an interruption, never the next day.
+        """
         if not self.path.exists():
             return False
         try:
@@ -498,6 +518,16 @@ class DraftSession:
         except (json.JSONDecodeError, OSError):
             return False
         if data.get("draft_id") != self.cfg.draft_id:
+            return False
+        if data.get("api_base") != client.API_V1:
+            self.stale_state_reason = "saved against a different API (mock vs live)"
+            return False
+        age = time.time() - float(data.get("saved_at") or 0)
+        if max_age and age > max_age:
+            self.stale_state_reason = (
+                "saved %.1f hours ago; treated as leftover, not a draft in progress"
+                % (age / 3600)
+            )
             return False
         self.mode = data.get("mode", "live")
         self.seat = data.get("seat")

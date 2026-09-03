@@ -615,3 +615,70 @@ class TestInvariantsUnderMixedOperations(unittest.TestCase):
             self._check(s)
         finally:
             client.draft_picks = original
+
+
+class TestStaleStateGuards(unittest.TestCase):
+    """A saved board must never silently seed a fresh session.
+
+    Observed live: starting the tool showed 136 picks already made, left over
+    from testing. The only guard was the draft id, which matches by definition
+    when the leftovers came from testing against the real league. Resuming a
+    board the operator did not expect looks like the draft is already underway,
+    which is worse than starting empty.
+    """
+
+    def setUp(self):
+        self.cfg = config.load()
+        self.path = pathlib.Path(tempfile.mkdtemp()) / "s.json"
+
+    def _write(self, *, age_hours=0.0, api_base=None, draft_id=None, claims=5):
+        from ffopt import client
+        import json
+        import time
+        with open(self.path, "w") as f:
+            json.dump({
+                "draft_id": draft_id or self.cfg.draft_id,
+                "api_base": client.API_V1 if api_base is None else api_base,
+                "saved_at": time.time() - age_hours * 3600,
+                "mode": "manual", "seat": 1,
+                "claims": [[str(i), "manual", 0] for i in range(claims)],
+            }, f)
+
+    def _session(self):
+        return session.DraftSession(self.cfg, board=_board(), path=self.path)
+
+    def test_recent_board_from_the_same_draft_is_restored(self):
+        self._write(age_hours=0.01)
+        s = self._session()
+        self.assertTrue(s.load())
+        self.assertEqual(s.picks_made, 5)
+
+    def test_old_board_is_ignored(self):
+        """A draft lasts under an hour; a day-old board is leftover state."""
+        self._write(age_hours=9)
+        s = self._session()
+        self.assertFalse(s.load())
+        self.assertEqual(s.picks_made, 0)
+        self.assertIn("hours ago", s.stale_state_reason)
+
+    def test_board_saved_against_a_mock_api_is_ignored(self):
+        """Rehearsing must not leave picks behind for the real draft."""
+        self._write(api_base="http://127.0.0.1:8899/v1")
+        s = self._session()
+        self.assertFalse(s.load())
+        self.assertEqual(s.picks_made, 0)
+        self.assertIn("different API", s.stale_state_reason)
+
+    def test_board_from_another_draft_is_ignored(self):
+        self._write(draft_id="some-other-draft")
+        s = self._session()
+        self.assertFalse(s.load())
+
+    def test_saved_board_records_its_provenance(self):
+        import json
+        from ffopt import client
+        s = self._session()
+        s.claim("1")
+        data = json.loads(self.path.read_text())
+        self.assertEqual(data["api_base"], client.API_V1)
+        self.assertIn("saved_at", data)

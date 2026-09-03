@@ -17,6 +17,10 @@ python3 scripts/serve.py          # opens http://127.0.0.1:8777
 `refresh_rules.py` matters: managers join and the draft order gets assigned right
 up to the start. It prints what changed, or says there was no drift.
 
+If it says **RESUMED: N picks restored**, and the draft has not started, that is
+leftover state — restart with `python3 scripts/serve.py --fresh`, or click
+**Clear board** in the banner.
+
 Two things to check on screen:
 
 1. **Seat** — it fills itself in once the league assigns the draft order. If it

@@ -474,3 +474,28 @@ class TestResponsiveness(WebTestCase):
         for _ in range(20):
             self.service.state()
         self.assertLess(time.perf_counter() - start, 1.0)
+
+
+class TestFreshStart(unittest.TestCase):
+    """The operator must be able to force an empty board."""
+
+    def test_fresh_discards_a_saved_board(self):
+        import json
+        import time
+        from ffopt import client, config, session
+        cfg = config.load()
+        path = pathlib.Path(tempfile.mkdtemp()) / "s.json"
+        with open(path, "w") as f:
+            json.dump({
+                "draft_id": cfg.draft_id, "api_base": client.API_V1,
+                "saved_at": time.time(), "mode": "manual", "seat": 3,
+                "claims": [["1", "manual", 0], ["2", "manual", 0]],
+            }, f)
+        restored = session.DraftSession(cfg, board=_board(), path=path)
+        self.assertTrue(restored.load())
+        self.assertEqual(restored.picks_made, 2)
+        restored.reset()
+        self.assertEqual(restored.picks_made, 0)
+        reloaded = session.DraftSession(cfg, board=_board(), path=path)
+        reloaded.load()
+        self.assertEqual(reloaded.picks_made, 0, "reset must persist")
