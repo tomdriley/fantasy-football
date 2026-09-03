@@ -1,9 +1,9 @@
-# Generated file - do not hand-edit. See _meta.source_endpoints for provenance.
+# Generated file - do not hand-edit. Regenerate with scripts/refresh_rules.py.
 _meta:
   description: Machine-readable capture of the league configuration exactly as returned by the Sleeper
     public API. This file is the single source of truth for all downstream code. Do not hand-edit; regenerate
-    from the API instead.
-  retrieved_at_utc: '2026-09-02T23:03:35.005571+00:00'
+    with scripts/refresh_rules.py.
+  retrieved_at_utc: '2026-09-03T15:22:43.098186+00:00'
   source_endpoints:
     league: https://api.sleeper.app/v1/league/1400629960678346752
     users: https://api.sleeper.app/v1/league/1400629960678346752/users
@@ -161,7 +161,7 @@ agents:
 - roster_id: 3
   user_id: '1400886965527703552'
   username: krishuu
-  team_name: The Sunday Ruiners FC
+  team_name: Faithful to the ER
   occupied: true
   keepers: []
 - roster_id: 4
@@ -173,7 +173,7 @@ agents:
 - roster_id: 5
   user_id: '1286010516619137024'
   username: fmmg19
-  team_name: null
+  team_name: Gramachamp
   occupied: true
   keepers: []
 - roster_id: 6
@@ -183,16 +183,16 @@ agents:
   occupied: true
   keepers: []
 - roster_id: 7
-  user_id: null
-  username: null
+  user_id: '1401238258561617920'
+  username: elguapo305
   team_name: null
-  occupied: false
+  occupied: true
   keepers: []
 - roster_id: 8
-  user_id: null
-  username: null
+  user_id: '1401254035146694656'
+  username: NFLRookie10
   team_name: null
-  occupied: false
+  occupied: true
   keepers: []
 - roster_id: 9
   user_id: null

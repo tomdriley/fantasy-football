@@ -110,9 +110,10 @@ Claim it with the final pick and never think about it again.
 - **Payoff weights:** 43 entries, standard full-PPR; skill-position weights identical to platform default
 - **Season structure:** playoffs begin week 15, top 6 of 10 qualify; trades close week 11
 - **Turn order is NOT yet assigned** (`draft_order: null`) ⇒ must precompute a policy for all 10 seats
-- **Only 6 of 10 agents have joined.** Any seat left empty runs the greedy autopick policy for the
-  entire draft — i.e. a **fully deterministic, perfectly predictable opponent** that the model can
-  exploit
+- **Seats fill right up to the draft.** Any seat left empty runs the greedy autopick policy for the
+  entire draft — a **fully deterministic, perfectly predictable opponent**. The count is read live
+  rather than assumed; it fell from four to two on the morning of the draft. Measured, exploiting
+  their *positions* turns out not to help (see `algorithm.md` §10)
 - **No keepers declared** (verified across all 10 rosters) ⇒ the full item pool is available and the
   consensus-order distribution is undistorted
 - 10 agents × 15 rounds = 150 of ~600 items claimed ⇒ the unclaimed remainder is deep, which is why

@@ -48,7 +48,24 @@ class TestConfig(unittest.TestCase):
             self.cfg.pick_numbers(11)
 
     def test_bot_seats_are_the_unowned_ones(self):
-        self.assertEqual(self.cfg.bot_seats(), [7, 8, 9, 10])
+        """Derived from the rules file, not hardcoded.
+
+        Seats fill right up to the draft, so pinning a literal here guarantees
+        a false failure on the day. What must hold is the relationship: a bot
+        seat is one whose roster has no owner.
+        """
+        owners = {a["roster_id"]: a["user_id"] for a in self.cfg.raw["agents"]}
+        slots = self.cfg.raw["draft"]["slot_to_roster_id"]
+        expected = sorted(
+            int(slot) for slot, rid in slots.items() if not owners.get(rid)
+        )
+        self.assertEqual(self.cfg.bot_seats(), expected)
+
+    def test_bot_seats_are_a_valid_subset_of_seats(self):
+        bots = self.cfg.bot_seats()
+        self.assertEqual(len(bots), len(set(bots)))
+        for seat in bots:
+            self.assertTrue(1 <= seat <= self.cfg.num_agents)
 
 
 class TestScoring(unittest.TestCase):

@@ -33,9 +33,9 @@ Ignore the sport for a moment. Mechanically:
 - **Items you own but do not field score nothing.** This is the single most important mechanical
   fact in the entire problem.
 - Agents are paired off each week; higher weekly score wins. Accumulated wins determine who reaches
-  the playoffs.
+  the playoffs: **6 of 10** qualify, starting in week 15.
 
-**The draft** (tomorrow) is a one-shot, exclusive allocation of that item pool among the 10 agents.
+**The draft** is a one-shot, exclusive allocation of that item pool among the 10 agents.
 
 ---
 
@@ -106,7 +106,7 @@ Total roster:                15 items  =  15 draft rounds
 | Autopick | **Enabled** | If the timer expires, a greedy policy claims for you. This is also the baseline we're trying to beat |
 | Start time | 2026-09-03 20:00 UTC (16:00 Eastern) | — |
 | **Draft order** | **NOT YET ASSIGNED** | We must precompute a strategy for **all 10 possible seats** |
-| Occupied seats | **6 of 10** | See below — this is exploitable |
+| Occupied seats | **see `league-rules.yaml`** | Seats fill right up to the draft; regenerate with `scripts/refresh_rules.py` |
 
 ### The snake gap (why turn order dominates everything)
 
@@ -117,12 +117,16 @@ For seat 5: you pick at 5, 16, 25, 36… — consistent ~10-pick gaps.
 This gap is the whole decision problem. Choosing between two items is never "which is better" but
 **"which one will still be there in N picks"**. That's what the availability model estimates.
 
-### The four empty seats
+### Empty seats
 
-Four seats currently have no human owner. If they remain empty, they run the greedy autopick policy
-for the entire draft — a **fully deterministic, perfectly predictable opponent**. Modeling them is
-trivial and directly exploitable. If they fill before the draft, we fall back to the ADP-based
-probabilistic opponent model. The system must handle both cases.
+Any seat without a human owner runs the greedy autopick policy for the entire draft — a **fully
+deterministic, perfectly predictable opponent**. The count changes right up to the start (it fell
+from four to two on the morning of the draft as late managers joined), so it is read from the live
+league rather than assumed anywhere in the code.
+
+Measured, this matters far less than it appears: knowing exactly *which* seats are deterministic,
+rather than merely how many, produces no significant improvement. See
+[algorithm.md](./algorithm.md) §10.
 
 ---
 

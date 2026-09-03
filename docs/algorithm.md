@@ -344,8 +344,9 @@ better decisions.
 
 ### Exploiting the deterministic seats: a negative result
 
-Four of the ten seats are unowned and will run the platform's autopick, which
-follows consensus order exactly. That is a perfectly predictable opponent, and
+Some seats are unowned and run the platform's autopick, which follows consensus
+order exactly. (Four were unowned when this was measured; two remained by the
+morning of the draft. The count is read from the live league, never assumed.) That is a perfectly predictable opponent, and
 the rollout can be told either how *many* such seats exist or exactly *which*
 ones. The distinction is not cosmetic: the frequency approximation is badly
 miscalibrated for a middle seat, where every pick between the first and second

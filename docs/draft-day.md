@@ -9,9 +9,13 @@ Everything needed on 2026-09-03 at 16:00. No football knowledge required.
 ```sh
 cd ~/github/fantasy-football
 
+python3 scripts/refresh_rules.py  # pull the league's current state first
 python3 scripts/make_sheet.py     # then PRINT draft-sheet.txt
 python3 scripts/serve.py          # opens http://127.0.0.1:8777
 ```
+
+`refresh_rules.py` matters: managers join and the draft order gets assigned right
+up to the start. It prints what changed, or says there was no drift.
 
 Two things to check on screen:
 
