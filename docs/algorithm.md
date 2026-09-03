@@ -8,9 +8,11 @@ Companion to [architecture.md](./architecture.md) (how the system is structured)
 [draft-strategy-plan.md](./draft-strategy-plan.md) (why this approach). This document is the one
 that matters for correctness.
 
-> **Status: UNVALIDATED.** No backtest against realized outcomes has been run yet. Every number
-> below is internally consistent, and none of it is yet known to beat a trivial heuristic. Treat all
-> claims as unproven until [§9](#9-what-would-falsify-this) is executed.
+> **Status: THE GATE FAILED.** The backtest has now been run, and the rollout optimizer **loses to
+> the platform's own autopick** by roughly 4–6% on realized 2025 outcomes under controlled A/B
+> conditions. So do all three simpler strategies that were tried. The project's founding premise —
+> that beating autopick is a low bar — is **refuted**. See [§11](#11-backtest-results-the-gate-failed).
+> Do not use this engine to make live decisions on the strength of anything below.
 
 ---
 
@@ -271,6 +273,67 @@ Concrete, executable checks. **None have been run.**
 
 ---
 
+## 11. Backtest results: the gate failed
+
+Claims made using 2025 pre-season information; scores computed from 2025 realized outcomes. The
+design is non-circular: forecast error is fully in play (one top-3 consensus pick returned 77% of
+projection, another 120%).
+
+**Controlled A/B.** One seat varies strategy, the other nine run platform autopick, identical seeds,
+so the only difference is our own policy.
+
+| Strategy | Mean weekly score | vs autopick | Wins |
+|---|---|---|---|
+| **autopick (platform default)** | **2177.7** | — | — |
+| optimizer (this engine) | 2042.5 | **−6.2%** | 11/40 |
+| hybrid (consensus window + projections) | 2088.2 | −4.1% | 10/40 |
+| heuristic (five lines of common sense) | 1997.6 | −8.3% | 3/15 |
+| projection-greedy | 2057.4 | −5.6% | 6/15 |
+| depth-maximising | 1954.8 | −10.2% | 4/40 |
+
+$t = -4.4$ for the optimizer. This is not noise.
+
+### Why autopick is strong
+
+The premise was that autopick is myopic — that it ignores scarcity and roster construction. That is
+wrong. It orders by market consensus **subject to per-type caps** (RB≤4, WR≤4, TE≤3, QB≤1, K≤1,
+DEF≤1). Those caps *implicitly encode scarcity*: capping the single-slot types at one forces every
+remaining pick into the types that accumulate value, which is exactly what value-over-replacement
+prescribes. It is a sound strategy expressed as a constraint rather than an objective.
+
+### What the diagnosis showed
+
+Comparing total realized points of all 15 drafted items against weekly lineup scores separates
+player *selection* from roster *shape*:
+
+| Strategy | All-15 realized | Weekly score | Flex-eligible |
+|---|---|---|---|
+| autopick | 2617 | **2171** | 11.2 |
+| hybrid | **2670** | 2069 | 10.0 |
+| optimizer | 2396 | 2094 | 11.0 |
+
+The hybrid drafted **better players** (2670 > 2617) and still scored **worse** (2069 < 2171). Roster
+shape dominates selection. But the obvious follow-up — maximise flex-eligible depth — performed
+*worst of all* (−10.2%), so "more depth" is not the mechanism either. **The actual mechanism is not
+yet identified.**
+
+### Two further findings
+
+1. **Projections beat consensus as a predictor** (Spearman +0.55 vs +0.38 against realized 2025
+   outcomes), which makes the optimizer's loss harder to explain, not easier. Better input, worse
+   result, points at the objective or the search rather than the data.
+2. **Projections compress the spread**, severely for kickers and defenses (projected best-kicker
+   value over replacement 9, realized 55). **This does not straightforwardly mean kickers matter**:
+   realized spread is measured with hindsight, and the capturable portion depends on how
+   *predictable* kicker performance is, which has not been tested. Resisting that inference is the
+   difference between a finding and a hindsight fallacy.
+
+### Consequences
+
+- The engine must not be trusted for live decisions.
+- The honest fallback is the platform default, or a plan that mirrors it.
+- The unexplained gap is the single most important open problem here.
+
 ## 10. Audit checklist
 
 - [ ] Does $V(R)$ credit any item that cannot be started? (Should be no — term (c) is capped at the
@@ -280,4 +343,6 @@ Concrete, executable checks. **None have been run.**
 - [ ] Does changing the tiebreak from VOR to raw payoff reproduce QB hoarding? (Should be yes.)
 - [ ] Is any strategy rule hard-coded outside `mandatory_filter`? (Should be no.)
 - [ ] Do the empirical rates in §5 match a fresh recomputation from the realized-stats endpoint?
-- [ ] Does the engine beat baseline 2 in §9? **Unanswered.**
+- [x] Does the engine beat the trivial heuristic in §9? **Yes, narrowly (+2.7%).**
+- [x] Does the engine beat autopick? **NO — it loses by 4–6%. See §11.**
+- [ ] Why does a strategy that drafts better players score worse? **Unexplained.**

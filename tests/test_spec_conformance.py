@@ -120,21 +120,48 @@ class TestSpecHonesty(unittest.TestCase):
     """The spec must keep disclosing its own weak points."""
 
     def setUp(self):
-        self.text = DOC.read_text()
+        raw = DOC.read_text()
+        self.text = raw
+        # Prose wraps across lines and inside blockquotes, so strip leading
+        # quote markers before normalising whitespace.
+        lines = [ln.lstrip().removeprefix("> ").removeprefix(">") for ln in raw.splitlines()]
+        self.flat = " ".join(" ".join(lines).split())
 
-    def test_declares_unvalidated_status(self):
-        """Until the backtest runs, the doc must say so prominently."""
-        self.assertIn("UNVALIDATED", self.text)
+    def test_declares_validation_status_prominently(self):
+        """The doc must state its validation status up front, whatever it is.
+
+        It previously said UNVALIDATED. The backtest has since run and the
+        engine lost to the platform default, so the banner must now say so --
+        a failed gate is the single most important thing a reader needs.
+        """
+        banner = self.flat[: self.flat.index("## 1. Notation")]
+        self.assertTrue(
+            "GATE FAILED" in banner or "UNVALIDATED" in banner,
+            "the validation status banner has been removed or softened",
+        )
+
+    def test_does_not_overclaim_against_the_baseline(self):
+        """The loss to autopick must remain stated, not quietly dropped."""
+        self.assertIn("loses to the platform", self.flat)
+        self.assertIn("refuted", self.flat)
+
+    def test_flags_the_unexplained_gap(self):
+        """The open problem must stay visible rather than be papered over."""
+        self.assertIn("not yet identified", self.flat)
+
+    def test_resists_the_hindsight_fallacy(self):
+        """Realized spread is ex-post; the doc must keep saying so."""
+        self.assertIn("hindsight", self.flat)
 
     def test_names_the_weakest_parameter(self):
-        self.assertIn("Waiver contention rank", self.text)
+        self.assertIn("Waiver contention rank", self.flat)
 
     def test_records_the_adp_std_trap(self):
-        self.assertIn("not a standard deviation", self.text)
+        self.assertIn("not a standard deviation", self.flat)
 
     def test_keeps_the_trivial_heuristic_baseline(self):
         """The most likely way this project fails must stay documented."""
-        self.assertIn("trivial heuristic", self.text)
+        self.assertIn("trivial heuristic", self.flat)
 
 
 if __name__ == "__main__":

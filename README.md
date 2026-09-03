@@ -17,9 +17,11 @@ problem rather than a forecasting one.
 Start with the **algorithm doc** to audit correctness, the strategy plan for the
 reasoning, or the product design doc for what the tool does on draft day.
 
-> The engine is **not yet validated**. No backtest against realized outcomes has
-> been run, so it is not known to beat a trivial heuristic. See
-> [algorithm.md](docs/algorithm.md) section 9.
+> **The backtest gate failed.** Measured against realized 2025 outcomes under
+> controlled A/B conditions, the optimizer **loses to the platform's own autopick
+> by 4-6%**, as do all the simpler strategies tried. The project's founding
+> premise -- that beating autopick is a low bar -- is refuted. Do not use this
+> engine for live decisions. See [algorithm.md](docs/algorithm.md) section 11.
 
 ## Layout
 
@@ -35,6 +37,7 @@ reasoning, or the product design doc for what the tool does on draft day.
 | `ffopt/season.py` | The objective: expected season value, including bench slots |
 | `ffopt/availability.py` | Opponent model |
 | `ffopt/optimizer.py` | Rollout decision rule and feasibility constraints |
+| `ffopt/backtest.py` | Non-circular validation: preseason claims, realized scoring |
 
 ## Running
 
