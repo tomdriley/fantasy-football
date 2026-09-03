@@ -37,9 +37,13 @@ class TestCheatSheet(unittest.TestCase):
     def test_warns_about_the_quarterback_trap(self):
         self.assertIn("barely better than the 10th best", self.text)
 
-    def test_states_the_waiver_contingency(self):
-        """Worth ~50 pts a season; the operator must know which mode applies."""
-        self.assertIn("free agents each week", self.text)
+    def test_insists_every_slot_is_filled(self):
+        """Previously this asked the reader which waiver mode applied.
+
+        Backtesting removed the ambiguity: filling every mandatory slot wins in
+        both worlds, so the sheet now states a rule instead of a contingency.
+        """
+        self.assertIn("NEVER end the draft unable to fill a slot", self.text)
 
     def test_marks_tier_cliffs(self):
         self.assertIn("<- cliff", self.text)

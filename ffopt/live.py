@@ -102,7 +102,8 @@ def recommend_now(
         (i.player_id or i.name): valuation.value_over_replacement(i, baselines)
         for i in available
     }
-    waivers = season.waiver_baselines(available, cfg)
+    # Decide with the pessimistic waiver assumption; see season.objective_waivers.
+    waivers = season.objective_waivers(available)
     current = state.picks_made + 1
     recs = optimizer.recommend(
         state.my_roster, available, cfg, seat=seat, current_pick=current,

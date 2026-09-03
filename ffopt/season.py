@@ -79,6 +79,25 @@ def unavailability(pos: str) -> float:
     return UNAVAILABILITY.get(pos, _DEFAULT_Q)
 
 
+def objective_waivers(items: Sequence[pool.Item]) -> dict[str, float]:
+    """Waiver assumption to use when *deciding*, as opposed to when scoring.
+
+    Deliberately zero. Crediting an unfilled starting slot at free-agent level
+    is realistic -- a manager really can add someone that week -- but using it
+    inside the objective makes leaving a slot empty look cheap, and measured
+    across five seasons it leaves a mandatory slot unfilled in about a third of
+    drafts. Assuming an empty slot scores nothing fills every slot every time
+    and scores better in *both* worlds: +9.1% against the platform default when
+    the roster is managed weekly and +10.0% when it is never touched, against
+    +7.9% and +7.7% for the realistic assumption.
+
+    In other words the pessimistic assumption is not a hedge, it dominates. The
+    realistic baselines remain correct for *evaluating* a roster, which is why
+    the two are separate functions.
+    """
+    return {position: 0.0 for position in config.SCORING_TYPES}
+
+
 def waiver_baselines(
     items: Sequence[pool.Item],
     cfg: config.LeagueConfig | None = None,

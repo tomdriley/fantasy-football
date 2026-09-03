@@ -96,9 +96,9 @@ def render(
     add("  3. One quarterback only, around rounds 7-10. The best QB scores most")
     add("     points of anyone but is barely better than the 10th best.")
     add("  4. By round 12 make sure you can field: 1 QB, 2 RB, 2 WR, 1 TE, K, DEF.")
-    add("  5. If you will NOT check the app weekly, draft a 2nd TE and 2nd QB as")
-    add("     cover. If you WILL add free agents each week, skip them and take")
-    add("     more RB/WR. This is worth ~50 pts a season either way.")
+    add("  5. NEVER end the draft unable to fill a slot. Backtesting says leaving")
+    add("     one empty costs more than any player you gain by skipping it, even")
+    add("     if you plan to add free agents weekly.")
     add("")
 
     add("-" * 74)
