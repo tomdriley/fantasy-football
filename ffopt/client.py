@@ -21,8 +21,11 @@ from typing import Any
 
 from . import config
 
-API_V1 = "https://api.sleeper.app/v1"
-API_V2 = "https://api.sleeper.com"
+#: Live endpoints. Overridable so the whole stack can be pointed at a mock
+#: draft server and exercised end to end, including the polling path, without
+#: any change to application code. See scripts/mock_draft.py.
+API_V1 = os.environ.get("FFOPT_API_V1", "https://api.sleeper.app/v1")
+API_V2 = os.environ.get("FFOPT_API_V2", "https://api.sleeper.com")
 
 CACHE_DIR = config.REPO_ROOT / "data" / "cache"
 DEFAULT_TTL = 12 * 3600

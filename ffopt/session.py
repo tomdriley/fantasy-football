@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import pathlib
 import time
 from typing import Iterable, Sequence
@@ -29,7 +30,12 @@ from typing import Iterable, Sequence
 from . import availability, client, config, manual, optimizer, pool, season, shrinkage, valuation
 
 MODES = ("live", "assisted", "manual")
-STATE_PATH = config.REPO_ROOT / "data" / "session.json"
+
+#: Where the live board is persisted. Overridable so a rehearsal cannot write
+#: over the state of a draft that is actually in progress.
+STATE_PATH = pathlib.Path(
+    os.environ.get("FFOPT_SESSION_PATH", config.REPO_ROOT / "data" / "session.json")
+)
 
 #: Shrinkage toward the market prior, matching the validated backtest setting.
 DEFAULT_LAMBDA = 0.7

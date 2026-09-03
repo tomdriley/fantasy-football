@@ -379,6 +379,47 @@ point had run with zero modelled bots, because the parameter was being silently
 discarded. The validated result was therefore achieved while treating all nine
 opponents as humans.
 
+### How often does it actually disagree with the baseline?
+
+Measured across 1,350 decisions (90 drafts, 3 seasons), with both strategies
+shown the **identical board** at each of our turns so disagreement is isolated
+from downstream drift:
+
+**They pick differently 75% of the time** — and when they do, the chosen player
+is worth **+21 points more over replacement** on average (+21.8 vs +1.1), while
+sitting at a nearly identical market rank (85 vs 81). The engine is not reaching
+past consensus; it is choosing *differently within* it.
+
+Disagreement rises through the draft — 54% in round 1, 89% by round 10 — because
+early on the best player and the most valuable player usually coincide, and later
+they routinely do not.
+
+The most valuable swaps:
+
+| Swap | Count | Avg value gained | Avg round |
+|---|---|---|---|
+| RB → DEF | 52 | **+56.6** | 10.6 |
+| RB → QB | 78 | **+49.7** | 10.2 |
+| RB → WR | 208 | **+38.7** | 7.7 |
+| WR → TE | 42 | +15.4 | 7.6 |
+
+Every large gain has the same shape: autopick takes a **fourth running back**
+because its cap allows four, while the roster still has no quarterback, tight
+end or defense. Its rule — *highest consensus whose position is not at cap* —
+cannot see that a position is effectively full, cannot see how replaceable a
+player is, and treats a mandatory slot as just another cap.
+
+The replacement levels it never computes are what drive every one of those swaps:
+
+| Position | Best available | Obtainable free later | Difference |
+|---|---|---|---|
+| RB | 313 | 86 | 227 |
+| WR | 301 | 111 | 190 |
+| TE | 229 | 130 | 98 |
+| QB | 338 | 242 | 97 |
+| DEF | 113 | 98 | 16 |
+| K | 76 | 73 | **4** |
+
 ### Adversarial checks
 
 | Test | Result | What it rules out |
