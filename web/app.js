@@ -436,14 +436,35 @@ async function removeFix() {
 
 /* ---------- wiring ---------- */
 
+/* Poll faster as our turn approaches. A fixed five-second interval meant a
+ * pick could sit unseen for five seconds, which reads as the tool lagging the
+ * room. Syncing is cheap (about a tenth of a second), so the rate is raised
+ * when it matters and kept low when it does not, rather than hammering the API
+ * for the whole draft. */
+function pollInterval() {
+  const s = App.state;
+  if (!s || s.complete) return 10000;
+  const gap = s.picks_until_my_turn;
+  if (gap === null) return 10000;
+  if (gap <= 2) return 1500;
+  if (gap <= 5) return 2500;
+  return 5000;
+}
+
 function startPolling() {
-  if (App.polling) clearInterval(App.polling);
-  App.polling = setInterval(async () => {
-    if (!App.state || App.state.mode === 'manual') return;
-    const before = App.state.picks_made;
-    await doSync();
-    if (App.state && App.state.picks_made !== before) refreshAdvice(true);
-  }, 5000);
+  if (App.polling) clearTimeout(App.polling);
+  const tick = async () => {
+    try {
+      if (App.state && App.state.mode !== 'manual') {
+        const before = App.state.picks_made;
+        await doSync();
+        if (App.state && App.state.picks_made !== before) await refreshAdvice(true);
+      }
+    } finally {
+      App.polling = setTimeout(tick, pollInterval());
+    }
+  };
+  App.polling = setTimeout(tick, pollInterval());
 }
 
 function bind() {

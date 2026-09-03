@@ -114,3 +114,22 @@ class TestNoExternalDependencies(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestPollingBehaviour(unittest.TestCase):
+    """Polling must be responsive near our turn without hammering the API."""
+
+    def test_polling_is_adaptive(self):
+        self.assertIn("function pollInterval", JS)
+        self.assertIn("picks_until_my_turn", JS)
+
+    def test_polling_uses_a_self_rescheduling_timeout(self):
+        """setInterval would stack requests if one sync ran long."""
+        self.assertIn("setTimeout(tick", JS)
+        self.assertNotIn("setInterval", JS)
+
+    def test_polling_slows_down_when_the_draft_is_over(self):
+        self.assertIn("s.complete) return 10000", JS)
+
+    def test_manual_mode_never_polls(self):
+        self.assertIn("mode !== 'manual'", JS)
