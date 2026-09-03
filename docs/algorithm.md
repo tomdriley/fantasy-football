@@ -212,10 +212,17 @@ Every published ADP field is a *mean* for a different scoring format. `adp_std` 
 ADP, not a standard deviation — a trap that yields a silently broken simulation. No dispersion data
 exists, and no completed 10-team drafts were reachable to calibrate against.
 
-Mitigation is to show the *decision* does not depend on it. In round 1 it does not: across a 7× range
-of $\rho$ the ordering of candidates is unchanged, though EV levels move 250 → 291. **Middle rounds
-remain untested**, and that is where similar-value candidates with different scarcity profiles could
-flip.
+Mitigation is to show the *decision* does not depend on it. Tested across an 8× range of $\rho$
+(0.5, 1.5, 4.0) at rounds 1, 3, 5, 7, 9 and 11:
+
+| Round | 5 | 25 | 45 | 65 | 85 | 105 |
+|---|---|---|---|---|---|---|
+| stable? | yes | yes | yes | yes | yes | **flip** |
+
+The recommendation is identical in five of six rounds. The single flip is at round 11, between two
+near-equivalent late bench options where the objective values differ by a fraction of a point. The
+decision is therefore stable wherever it carries stakes, which is the property needed given the
+parameter cannot be measured.
 
 ### 6.5 The rollout's continuation policy is itself greedy
 
