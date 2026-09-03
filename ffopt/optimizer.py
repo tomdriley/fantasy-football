@@ -199,11 +199,22 @@ def rollout(
     total_picks: int,
     vor: dict[str, float],
     waivers: dict[str, float],
+    horizon: int = 0,
 ) -> float:
-    """Simulate the rest of the draft and return our final lineup value."""
+    """Simulate the rest of the draft and return our final lineup value.
+
+    `horizon` limits how many of our own future picks are simulated. Distant
+    picks contribute little to a comparison between candidates available now,
+    because by then the board has diverged so far that the same continuation is
+    reachable from any of them. Truncating trades a small amount of accuracy for
+    a large amount of speed, which matters against a 60 second deadline.
+    """
     roster = list(roster)
     alive = list(alive)
     upcoming = sorted(p for p in my_remaining_picks if p > current_pick)
+    if horizon > 0:
+        upcoming = upcoming[:horizon]
+        total_picks = min(total_picks, upcoming[-1] if upcoming else current_pick)
     mine = set(upcoming)
     left = len(upcoming)
     budget = league_type_budget(cfg)
@@ -239,6 +250,7 @@ def recommend(
     trials: int = 60,
     reach: float = availability.DEFAULT_REACH,
     bot_seats: int = 0,
+    horizon: int = 0,
     rng: random.Random | None = None,
 ) -> list[Recommendation]:
     """Rank candidate claims by expected final lineup value.
@@ -292,6 +304,7 @@ def recommend(
                 total_picks,
                 vor,
                 waivers,
+                horizon,
             )
         results.append(
             Recommendation(

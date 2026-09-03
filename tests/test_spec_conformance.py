@@ -130,28 +130,33 @@ class TestSpecHonesty(unittest.TestCase):
     def test_declares_validation_status_prominently(self):
         """The doc must state its validation status up front, whatever it is.
 
-        It previously said UNVALIDATED. The backtest has since run and the
-        engine lost to the platform default, so the banner must now say so --
-        a failed gate is the single most important thing a reader needs.
+        Whatever the status is, it belongs above the fold. It has read
+        UNVALIDATED, then GATE FAILED, and now records a conditional result.
         """
         banner = self.flat[: self.flat.index("## 1. Notation")]
         self.assertTrue(
-            "GATE FAILED" in banner or "UNVALIDATED" in banner,
+            any(k in banner for k in ("UNVALIDATED", "GATE FAILED", "CONDITIONALLY VALIDATED")),
             "the validation status banner has been removed or softened",
         )
 
     def test_does_not_overclaim_against_the_baseline(self):
-        """The loss to autopick must remain stated, not quietly dropped."""
-        self.assertIn("loses to the platform", self.flat)
+        """The margin is small and conditional; both facts must stay stated."""
         self.assertIn("refuted", self.flat)
+        self.assertIn("conditional", self.flat.lower())
+        self.assertIn("managed weekly", self.flat)
 
-    def test_flags_the_unexplained_gap(self):
-        """The open problem must stay visible rather than be papered over."""
-        self.assertIn("not yet identified", self.flat)
+    def test_flags_the_open_risks(self):
+        """Remaining weaknesses must stay visible rather than be papered over."""
+        self.assertIn("Single season", self.flat)
+        self.assertIn("optimizer's curse", self.flat.lower().replace("\u2019", "'"))
 
-    def test_resists_the_hindsight_fallacy(self):
-        """Realized spread is ex-post; the doc must keep saying so."""
-        self.assertIn("hindsight", self.flat)
+    def test_records_the_harness_lesson(self):
+        """The most transferable finding of the project."""
+        self.assertIn("audit the harness before", self.flat)
+
+    def test_reports_the_clustering_caveat(self):
+        """Configurations are correlated; precision must not be overstated."""
+        self.assertIn("clustered", self.flat.lower())
 
     def test_names_the_weakest_parameter(self):
         self.assertIn("Waiver contention rank", self.flat)

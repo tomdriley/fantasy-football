@@ -147,12 +147,13 @@ def pick_projection_greedy(
 def pick_optimizer(
     roster: Sequence[pool.Item], alive: list[int], ctx: DraftContext,
     seat: int = 1, current_pick: int = 1, trials: int = 30,
-    num_candidates: int = 8, **_
+    num_candidates: int = 8, horizon: int = 0, **_
 ) -> int:
     sub = [ctx.board[i] for i in alive]
     recs = optimizer.recommend(
         list(roster), sub, ctx.cfg, seat=seat, current_pick=current_pick,
         vor=ctx.vor, waivers=ctx.waivers, num_candidates=num_candidates, trials=trials,
+        horizon=horizon,
         reach=availability.DEFAULT_REACH, bot_seats=ctx.bot_seats, rng=ctx.rng,
     )
     chosen = recs[0].item

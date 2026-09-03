@@ -17,11 +17,12 @@ problem rather than a forecasting one.
 Start with the **algorithm doc** to audit correctness, the strategy plan for the
 reasoning, or the product design doc for what the tool does on draft day.
 
-> **The backtest gate failed.** Measured against realized 2025 outcomes under
-> controlled A/B conditions, the optimizer **loses to the platform's own autopick
-> by 4-6%**, as do all the simpler strategies tried. The project's founding
-> premise -- that beating autopick is a low bar -- is refuted. Do not use this
-> engine for live decisions. See [algorithm.md](docs/algorithm.md) section 11.
+> **Validated, conditionally.** Against realized 2025 outcomes under controlled
+> A/B conditions the optimizer beats the platform's autopick by **+1.6% if the
+> roster is managed weekly** (42/60 configurations, all 6 seed-clusters positive)
+> and is **indistinguishable from it if the roster is never touched**. The
+> founding premise that beating autopick is a *low* bar is refuted: autopick is
+> strong and the margin is small. See [algorithm.md](docs/algorithm.md) §10.
 
 ## Layout
 
@@ -38,13 +39,20 @@ reasoning, or the product design doc for what the tool does on draft day.
 | `ffopt/availability.py` | Opponent model |
 | `ffopt/optimizer.py` | Rollout decision rule and feasibility constraints |
 | `ffopt/backtest.py` | Non-circular validation: preseason claims, realized scoring |
+| `ffopt/shrinkage.py` | Shrinks forecasts toward market prior (counters selection bias) |
+| `ffopt/cheatsheet.py` | Printable paper fallback |
+| `ffopt/live.py` | Live draft advisor |
 
 ## Running
 
 Requires Python 3 with `pyyaml`. No other dependencies.
 
 ```sh
-python3 -m unittest discover -s tests -v
+python3 -m unittest discover -s tests -v      # 57 tests, ~1s
+
+python3 scripts/make_sheet.py                 # printable draft sheet
+python3 scripts/draft.py --seat 5 --once      # one live recommendation
+python3 scripts/draft.py                      # poll continuously during the draft
 ```
 
 API responses cache under `data/cache/` (gitignored), so the 60-second draft
