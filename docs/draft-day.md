@@ -21,14 +21,31 @@ If it says **RESUMED: N picks restored**, and the draft has not started, that is
 leftover state — restart with `python3 scripts/serve.py --fresh`, or click
 **Clear board** in the banner.
 
-Two things to check on screen:
+The app opens on a **setup screen** asking two things:
 
-1. **Seat** — it fills itself in once the league assigns the draft order. If it
-   still shows `?` at 16:00, pick your seat from the dropdown (the app shows it
-   in the Sleeper draft room).
-2. **Mode** — leave it on `live`.
+1. **Where do you pick?** As of 15:30 the league had *not* drawn the order yet.
+   If it still has not, choose **Not drawn yet** — the tool will not guess, and
+   will tell you its advice is best-available-only until you set it. The moment
+   Sleeper shows your position, set it from the `Seat` dropdown in the header.
+2. **How will picks get in?** It defaults to **Manual**, which is the safe
+   choice: you type each pick, nothing depends on the network, and nothing can
+   silently go wrong. Switch to `assisted` or `live` only if the feed is proven
+   to be working.
 
 Keep the printed sheet next to you. It is the backup if the laptop dies.
+
+---
+
+## If something goes wrong
+
+| Problem | Fix |
+|---|---|
+| The feed is wrong, or picks are appearing that did not happen | **Take over manually** (header button, or press `M`). Polling stops; your board is untouched |
+| You typed the wrong player | **Fix** next to that pick — replace or remove it |
+| You typed one pick too many | **Undo last**, or press `U` |
+| The board is beyond saving | **Reset board** — clears every pick, keeps your seat and mode |
+| The clock is nearly out and you do not trust anything | **PANIC**, or press `P` — instant answer, no simulation, no network |
+| You need to change seat or mode | **Setup** in the header |
 
 ---
 

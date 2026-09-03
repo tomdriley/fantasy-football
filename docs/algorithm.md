@@ -164,7 +164,7 @@ Every constant, its provenance, and what it is worth. **This table is the primar
 | WAIVER_THRESHOLD | 150 | $= \text{rounds} \times \text{agents}$, exact | Structural |
 | **Waiver contention rank** | $\lfloor N/2 \rfloor = 5$ | **Assumed. No empirical basis.** | **LOW — see §6.1** |
 | $\rho$ (opponent reach) | 1.5 | **Unmeasurable from the API** | Low value, but decision-stable (§6.4) |
-| $T$ (rollout trials) | 4–60 | Compute budget | Low impact |
+| $T$ (rollout trials) | 30 backtest / 120 live | Measured convergence (§6.7) | Low impact on the *mean*, decisive for a *single* draft |
 | Shortlist width | 80 / 120 | Compute budget | Low impact |
 
 ---
@@ -237,6 +237,42 @@ $p(i)$ is treated as a point estimate. There is no variance term anywhere in $V(
 agents reach the playoffs, outcome variance has real option value that this model cannot see. A
 concrete symptom of single-source risk: one running back is projected *below replacement* while the
 market claims him 37th overall.
+
+### 6.7 Monte Carlo noise is not free, even though the mean says it is
+
+$\hat{V}$ is a sample mean over $T$ rollouts, so it carries sampling error. That error cancels when
+averaging 200 backtest drafts — which is precisely why $T=30$ looked harmless for two months of
+development. It does not cancel in a single live draft, which draws exactly one sample.
+
+Measured on the opening board, holding the board fixed and varying only the random seed:
+
+| $T$ | ms/call | Seeds agreeing on the top pick |
+|---|---|---|
+| 30 | 180 | 7 / 9 — *flipped between a 144-value RB and a 43-value QB* |
+| 60 | 357 | 9 / 9 |
+| 120 | 707 | 9 / 9 |
+| 250 | 1491 | 9 / 9 |
+| 500 | 2940 | 9 / 9 |
+
+The instability is not a defect in the estimator; it is the estimator honestly reporting that those
+two candidates are within ~2 points of each other. But the operator cannot act on a distribution.
+Two things follow:
+
+1. **The live path is seeded from the board position**, so the same board always yields the same
+   advice. Refreshing, changing mode, or reconnecting cannot silently reorder the recommendation.
+2. **$T = 120$ live**, double the measured convergence point.
+
+Raising $T$ was verified not to disturb the validated result — 250 controlled drafts, engine in one
+seat against nine autopickers, five seasons × five seats × five repetitions:
+
+| $T$ | Drafts | Mean edge | Wins | Edge % |
+|---|---|---|---|---|
+| 30 | 125 | +246.9 | 108 / 125 | +11.0% |
+| 120 | 125 | +247.6 | 114 / 125 | +11.1% |
+
+The difference in mean edge is statistically indistinguishable ($\Delta = +0.7$ points, $t = +0.03$).
+More samples buy reproducibility, not accuracy — the win count edges up (114 vs 108) only because
+fewer drafts are lost to an unlucky rollout.
 
 ---
 

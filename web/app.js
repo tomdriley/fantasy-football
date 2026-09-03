@@ -17,6 +17,7 @@ const App = {
   busy: false,
   fixPick: null,
   lastAdvice: 0,
+  setupSeat: null,
 };
 
 /* ---------- transport ---------- */
@@ -42,6 +43,76 @@ const post = (path, data) =>
     body: JSON.stringify(data || {}),
   });
 
+/* ---------- setup screen ---------- */
+
+/* The first thing the operator sees. It asks the two questions the engine
+ * cannot answer for itself -- which seat is yours, and where picks come from --
+ * rather than guessing and being confidently wrong about both. */
+
+function openSetup(canCancel) {
+  const s = App.state;
+  if (!s) return;
+  App.setupSeat = s.seat || null;
+
+  const grid = $('setupSeats');
+  grid.innerHTML = '';
+  for (let i = 1; i <= s.num_agents; i++) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'seat-btn' + (App.setupSeat === i ? ' on' : '');
+    b.textContent = i;
+    if (s.bot_seats.includes(i)) b.title = 'currently an unclaimed seat';
+    b.onclick = () => { App.setupSeat = i; paintSetupSeats(); };
+    grid.appendChild(b);
+  }
+  const unk = document.createElement('button');
+  unk.type = 'button';
+  unk.className = 'seat-btn wide-btn' + (App.setupSeat === null ? ' on' : '');
+  unk.textContent = 'Not drawn yet';
+  unk.onclick = () => { App.setupSeat = null; paintSetupSeats(); };
+  grid.appendChild(unk);
+
+  const want = s.mode || 'manual';
+  document.querySelectorAll('input[name=setupMode]').forEach((r) => {
+    r.checked = r.value === want;
+  });
+
+  $('setupCancel').classList.toggle('hidden', !canCancel);
+  $('setup').classList.remove('hidden');
+  paintSetupSeats();
+}
+
+function paintSetupSeats() {
+  const btns = $('setupSeats').querySelectorAll('.seat-btn');
+  btns.forEach((b) => {
+    const isUnknown = b.classList.contains('wide-btn');
+    const on = isUnknown ? App.setupSeat === null : Number(b.textContent) === App.setupSeat;
+    b.classList.toggle('on', on);
+  });
+  $('setupSeatMsg').textContent = App.setupSeat === null
+    ? 'Advice will be best-available only until you set a seat.'
+    : `Seat ${App.setupSeat}.`;
+  $('setupSeatMsg').className = 'msg' + (App.setupSeat === null ? ' warn-text' : '');
+}
+
+async function applySetup() {
+  const mode = (document.querySelector('input[name=setupMode]:checked') || {}).value || 'manual';
+  const r = await post('/api/start', { seat: App.setupSeat, mode });
+  if (r.body && r.body.state) renderState(r.body.state);
+  $('setup').classList.add('hidden');
+  if (mode !== 'manual') await doSync();
+  await refreshAdvice(true);
+  status('ready');
+}
+
+async function goManual() {
+  if (!App.state || App.state.mode === 'manual') return;
+  const r = await post('/api/manual');
+  if (r.body && r.body.state) renderState(r.body.state);
+  entryMsg('manual mode — polling stopped, your board is untouched', false);
+  status('manual');
+}
+
 /* ---------- rendering ---------- */
 
 function setConn(kind, text) {
@@ -62,6 +133,10 @@ function renderState(s) {
     }
   }
   $('seat').value = s.seat ? String(s.seat) : '';
+
+  // The escape hatch is only worth screen space when there is something to
+  // escape from; in manual mode it would just be noise.
+  $('goManual').classList.toggle('hidden', s.mode === 'manual');
 
   if (s.complete) {
     $('turn').textContent = 'Draft complete';
@@ -255,17 +330,33 @@ async function refreshState() {
 
 async function refreshAdvice(force) {
   const s = App.state;
-  if (!s || s.seat == null || s.complete) return;
+  if (!s || s.complete) return;
   const now = Date.now();
   if (!force && now - App.lastAdvice < 1500) return;
   App.lastAdvice = now;
+
+  // Before the draft order is drawn there is no seat, so the optimizer cannot
+  // reason about who picks when. A best-available ordering is still the right
+  // thing to look at, so show it -- but say plainly that it is not a plan, and
+  // let it upgrade by itself the moment the seat is known.
+  if (s.seat == null) {
+    const p = await api('/api/panic');
+    if (p.ok) {
+      renderPicks(p.body.picks, { panic: true });
+      status('seat unknown — best available only, not a draft plan', 'warn');
+    }
+    return;
+  }
+
   setPicksStale(true);
   status('thinking…');
   const r = await api('/api/recommend', {}, 30000);
   if (r.ok && r.body.picks) {
     App.recs = r.body.picks;
-    renderPicks(App.recs);
-    status('ready');
+    renderPicks(App.recs, { panic: !!r.body.degraded });
+    status(r.body.degraded
+      ? 'seat unknown — best available only, not a draft plan'
+      : 'ready', r.body.degraded ? 'warn' : undefined);
   } else {
     const p = await api('/api/panic');
     if (p.ok) { renderPicks(p.body.picks, { panic: true }); status('degraded — showing instant list'); }
@@ -472,7 +563,11 @@ function startPolling() {
   if (App.polling) clearTimeout(App.polling);
   const tick = async () => {
     try {
-      if (App.state && App.state.mode !== 'manual') {
+      // Nothing may touch the board while the operator is still telling us who
+      // they are -- a sync now could attribute picks against a seat they are
+      // about to change.
+      const setupOpen = !$('setup').classList.contains('hidden');
+      if (!setupOpen && App.state && App.state.mode !== 'manual') {
         const before = App.state.picks_made;
         await doSync();
         if (App.state && App.state.picks_made !== before) await refreshAdvice(true);
@@ -489,11 +584,17 @@ function bind() {
   $('q').onkeydown = (e) => { if (e.key === 'Enter') claimByQuery($('q').value); };
   $('undo').onclick = doUndo;
   $('panic').onclick = doPanic;
+  $('goManual').onclick = goManual;
+  $('openSetup').onclick = () => openSetup(true);
+  $('setupStart').onclick = applySetup;
+  $('setupCancel').onclick = () => $('setup').classList.add('hidden');
   $('sync').onclick = async () => { await doSync(); refreshAdvice(true); };
   $('reset').onclick = async () => {
-    if (!confirm('Clear every recorded pick? This cannot be undone.')) return;
+    if (!confirm('Clear every recorded pick? This cannot be undone.\n\n'
+                 + 'Your seat and mode are kept.')) return;
     const r = await post('/api/reset');
     if (r.body && r.body.state) renderState(r.body.state);
+    entryMsg('board cleared — seat and mode kept', false);
     refreshAdvice(true);
   };
   $('mode').onchange = async () => {
@@ -538,7 +639,8 @@ function bind() {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
     if (e.key === 'p' || e.key === 'P') { e.preventDefault(); doPanic(); }
     if (e.key === 'u' || e.key === 'U') { e.preventDefault(); doUndo(); }
-    if (e.key === 'Escape') closeFix();
+    if (e.key === 'm' || e.key === 'M') { e.preventDefault(); goManual(); }
+    if (e.key === 'Escape') { closeFix(); }
   });
 }
 
@@ -546,6 +648,17 @@ async function main() {
   bind();
   const ok = await refreshState();
   if (!ok) { status('cannot reach the local server', 'err'); return; }
+
+  // Ask before doing anything. Polling a feed or offering advice while the seat
+  // is still a guess is how a board silently ends up describing someone else's
+  // draft.
+  if (!App.state.configured) {
+    openSetup(false);
+    status('choose your seat and mode to begin');
+    startPolling();
+    return;
+  }
+
   if (App.state.mode !== 'manual') await doSync();
   await refreshAdvice(true);
   startPolling();

@@ -682,3 +682,135 @@ class TestStaleStateGuards(unittest.TestCase):
         data = json.loads(self.path.read_text())
         self.assertEqual(data["api_base"], client.API_V1)
         self.assertIn("saved_at", data)
+
+
+class TestSetup(unittest.TestCase):
+    """Seat and mode are asked for, never assumed."""
+
+    def setUp(self):
+        self.cfg = config.load()
+        self.path = pathlib.Path(tempfile.mkdtemp()) / "s.json"
+        self.s = session.DraftSession(self.cfg, board=_board(), path=self.path)
+
+    def test_defaults_to_manual_and_unconfigured(self):
+        """Manual is the only mode that cannot be wrong about the board."""
+        self.assertEqual(self.s.mode, "manual")
+        self.assertFalse(self.s.configured)
+        self.assertIsNone(self.s.seat)
+
+    def test_start_sets_seat_and_mode_together(self):
+        self.s.start(4, "live")
+        self.assertEqual(self.s.seat, 4)
+        self.assertEqual(self.s.mode, "live")
+        self.assertTrue(self.s.configured)
+
+    def test_start_allows_an_unknown_seat(self):
+        """The draft order may not be drawn yet; that is a real answer."""
+        self.s.start(None, "manual")
+        self.assertIsNone(self.s.seat)
+        self.assertTrue(self.s.configured)
+
+    def test_start_rejects_a_bad_seat_or_mode(self):
+        with self.assertRaises(session.SessionError):
+            self.s.start(99, "manual")
+        with self.assertRaises(session.SessionError):
+            self.s.start(1, "telepathy")
+        self.assertFalse(self.s.configured, "a rejected setup must not stick")
+
+    def test_setup_survives_a_restart(self):
+        self.s.start(7, "assisted")
+        again = session.DraftSession(self.cfg, board=_board(), path=self.path)
+        self.assertTrue(again.load())
+        self.assertEqual((again.seat, again.mode, again.configured), (7, "assisted", True))
+
+    def test_go_manual_never_touches_the_board(self):
+        """The escape hatch must be safe to hit at any moment."""
+        self.s.start(2, "live")
+        for pid in list(self.s.available())[:4]:
+            self.s.claim(pid.player_id)
+        before = list(self.s.claimed_ids)
+        self.s.go_manual()
+        self.assertEqual(self.s.mode, "manual")
+        self.assertEqual(list(self.s.claimed_ids), before)
+        self.assertEqual(self.s.seat, 2)
+
+    def test_reset_clears_picks_but_keeps_identity(self):
+        """Re-entering who you are with a clock running is a second problem."""
+        self.s.start(5, "assisted")
+        for pid in list(self.s.available())[:3]:
+            self.s.claim(pid.player_id)
+        self.s.reset()
+        self.assertEqual(self.s.picks_made, 0)
+        self.assertEqual(self.s.seat, 5)
+        self.assertEqual(self.s.mode, "assisted")
+
+    def test_a_seat_is_never_inferred_from_roster_slots(self):
+        """slot_to_roster_id is not a draft order.
+
+        Before the draw it is an identity mapping of slot to roster id. Reading
+        a seat out of it would invent an order that does not exist, and the seat
+        determines the whole pick schedule.
+        """
+        self.s._infer_seat([])
+        self.assertIsNone(self.s.seat)
+        self.assertIsNone(self.s.seat_source)
+
+    def test_a_pick_attributed_to_us_sets_the_seat(self):
+        self.s._infer_seat([
+            {"picked_by": "someone-else", "draft_slot": 3, "player_id": "1"},
+            {"picked_by": self.cfg.my_user_id, "draft_slot": 8, "player_id": "2"},
+        ])
+        self.assertEqual(self.s.seat, 8)
+        self.assertEqual(self.s.seat_source, "picks")
+
+    def test_the_operators_seat_is_never_overridden(self):
+        self.s.set_seat(6)
+        self.s._infer_seat([
+            {"picked_by": self.cfg.my_user_id, "draft_slot": 1, "player_id": "2"},
+        ])
+        self.assertEqual(self.s.seat, 6)
+
+
+class TestAdviceDeterminism(unittest.TestCase):
+    """The same board must always produce the same advice.
+
+    The rollout is a Monte Carlo estimate. Left unseeded it returned a
+    different ranking on each call, and on an opening board -- where the top
+    candidates sit within a couple of points of each other -- that was enough
+    to swap a 144-value running back for a 43-value quarterback between two
+    refreshes with nothing about the draft having changed.
+    """
+
+    def setUp(self):
+        self.cfg = config.load()
+        self.path = pathlib.Path(tempfile.mkdtemp()) / "s.json"
+        self.s = session.DraftSession(self.cfg, board=_board(), path=self.path)
+        self.s.start(3, "manual")
+
+    def test_repeated_calls_agree(self):
+        runs = {
+            tuple(r["name"] for r in self.s.recommendations(trials=8, count=4))
+            for _ in range(5)
+        }
+        self.assertEqual(len(runs), 1, f"advice varied between calls: {runs}")
+
+    def test_a_new_board_gets_an_independent_estimate(self):
+        """Seeding must not freeze the estimator across different positions."""
+        first = self.s._advice_seed(self.s.capture())
+        self.s.claim(self.s.available()[0].player_id)
+        self.assertNotEqual(first, self.s._advice_seed(self.s.capture()))
+
+    def test_the_seed_ignores_wall_clock_and_mode(self):
+        before = self.s._advice_seed(self.s.capture())
+        self.s.go_manual()
+        self.assertEqual(before, self.s._advice_seed(self.s.capture()))
+
+    def test_the_seed_tracks_the_seat(self):
+        """Seat changes the pick schedule, so it must change the estimate."""
+        before = self.s._advice_seed(self.s.capture())
+        self.s.set_seat(7)
+        self.assertNotEqual(before, self.s._advice_seed(self.s.capture()))
+
+    def test_live_trials_exceed_the_measured_convergence_point(self):
+        """Seeds agreed from 60 upward; below that the top pick flipped."""
+        self.assertGreaterEqual(session.LIVE_TRIALS, 60)

@@ -70,6 +70,21 @@ Three modes, differing only in who controls the board:
 | assisted | polled | **proposed for acceptance** |
 | manual | not touched | operator only |
 
+**Manual is the default**, and the session starts on a setup screen that asks
+for it explicitly. The reasoning is asymmetric risk: live mode's benefit is
+saving keystrokes, while its failure mode is a board that silently describes a
+different draft than the one in the room. On a one-shot event the keystrokes are
+cheap and the silent corruption is unrecoverable. Live and assisted are opt-in,
+and `M` returns to manual from anywhere without touching the recorded board.
+
+The same reasoning applies to the seat. It is asked for rather than inferred,
+because the seat determines the entire pick schedule -- get it wrong and every
+recommendation is optimised for a position the operator does not hold, while
+looking exactly as confident as a correct one. `slot_to_roster_id` is available
+early and *looks* like a draft order, but before the draw it is an identity
+mapping; reading a seat from it would be inventing an answer. "Not drawn yet" is
+a first-class choice, and advice is labelled best-available-only while it holds.
+
 Assisted mode is the interesting one. A feed that lags the room, or disagrees
 with it, would otherwise silently overwrite a board the operator has been
 maintaining by hand. Instead it surfaces the difference -- "the feed has 3 picks

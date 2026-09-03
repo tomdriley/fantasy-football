@@ -57,19 +57,26 @@ class DraftService:
         with self._lock:
             return self.session.snapshot()
 
-    def recommend(self, trials: int = 30) -> dict:
+    def recommend(self, trials: int = session.LIVE_TRIALS) -> dict:
         """Compute advice without holding the lock across the simulation.
 
         The simulation takes seconds on a full board. Holding the lock for its
         duration would block claims, state reads and the panic button, so the
         inputs are captured under the lock, the work happens outside it, and the
         result is only cached if the board has not moved meanwhile.
+
+        When the seat is unknown the optimizer cannot run at all -- the seat
+        determines the pick schedule, and therefore what will still be on the
+        board next time round. The answer is still useful, but it is a static
+        ordering rather than a plan, so it is labelled as such instead of being
+        presented with the same confidence.
         """
         with self._lock:
             key = self._key("rec")
+            degraded = self.session.seat is None
             cached = self._cache.get(key)
             if cached is not None:
-                return {"picks": cached, "cached": True}
+                return {"picks": cached, "cached": True, "degraded": degraded}
             snapshot = self.session.capture()
 
         picks = self.session.recommendations(trials=trials, snapshot=snapshot)
@@ -78,7 +85,7 @@ class DraftService:
             if self._key("rec") == key:  # board unchanged during the computation
                 self._cache.clear()
                 self._cache[key] = picks
-            return {"picks": picks, "cached": False}
+            return {"picks": picks, "cached": False, "degraded": degraded}
 
     def panic(self) -> dict:
         with self._lock:
@@ -147,6 +154,12 @@ class DraftService:
     def set_seat(self, seat: int | None) -> dict:
         return self._mutate(lambda: self.session.set_seat(seat))
 
+    def start(self, seat: int | None, mode: str) -> dict:
+        return self._mutate(lambda: self.session.start(seat, mode))
+
+    def go_manual(self) -> dict:
+        return self._mutate(self.session.go_manual)
+
     def sync(self) -> dict:
         with self._lock:
             result = self.session.sync()
@@ -212,8 +225,8 @@ def make_handler(service: DraftService) -> type[BaseHTTPRequestHandler]:
                     if route == "/api/state":
                         return self._json(service.state())
                     if route == "/api/recommend":
-                        trials = int((query.get("trials") or [30])[0])
-                        return self._json(service.recommend(max(1, min(trials, 200))))
+                        trials = int((query.get("trials") or [session.LIVE_TRIALS])[0])
+                        return self._json(service.recommend(max(1, min(trials, 500))))
                     if route == "/api/panic":
                         return self._json(service.panic())
                     if route == "/api/propose":
@@ -246,6 +259,12 @@ def make_handler(service: DraftService) -> type[BaseHTTPRequestHandler]:
                     return self._json(service.reset())
                 if route == "/api/mode":
                     return self._json(service.set_mode(body.get("mode", "")))
+                if route == "/api/start":
+                    seat = body.get("seat")
+                    return self._json(service.start(
+                        int(seat) if seat else None, body.get("mode", "manual")))
+                if route == "/api/manual":
+                    return self._json(service.go_manual())
                 if route == "/api/seat":
                     seat = body.get("seat")
                     return self._json(service.set_seat(int(seat) if seat else None))

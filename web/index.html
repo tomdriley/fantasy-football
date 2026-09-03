@@ -11,16 +11,20 @@
 <header>
   <div class="brand">Git Blame Copilot</div>
   <div class="controls">
+    <button id="goManual" class="manual-btn hidden" title="Stop polling and take over by hand (M)">
+      Take over manually
+    </button>
     <label>Mode
       <select id="mode" title="live: poll the league API. assisted: poll, but you can also type picks. manual: you type everything.">
-        <option value="live">live</option>
-        <option value="assisted">assisted</option>
         <option value="manual">manual</option>
+        <option value="assisted">assisted</option>
+        <option value="live">live</option>
       </select>
     </label>
     <label>Seat
       <select id="seat"><option value="">?</option></select>
     </label>
+    <button id="openSetup" class="ghost small" title="Change seat or mode">Setup</button>
     <span id="conn" class="pill offline">offline</span>
   </div>
 </header>
@@ -72,6 +76,8 @@
       <button id="sync" class="ghost">Sync from API</button>
       <button id="reset" class="ghost danger">Reset board</button>
     </div>
+    <p class="hint">Undo removes the last pick. Fix corrects or deletes any
+       earlier one. Reset clears every pick but keeps your seat and mode.</p>
   </section>
 
   <section class="card">
@@ -81,6 +87,51 @@
     <div id="warn" class="warn hidden"></div>
   </section>
 </main>
+
+<div id="setup" class="modal hidden">
+  <div class="modal-box setup-box">
+    <h2>Before you start</h2>
+
+    <div class="setup-step">
+      <h3>1 · Where do you pick?</h3>
+      <p class="hint">Your draft position decides when your turns come round, so
+         every recommendation depends on it. If the order has not been drawn yet,
+         say so — you can set it the moment you find out.</p>
+      <div id="setupSeats" class="seat-grid"></div>
+      <div id="setupSeatMsg" class="msg"></div>
+    </div>
+
+    <div class="setup-step">
+      <h3>2 · How will picks get in?</h3>
+      <div id="setupModes" class="mode-cards">
+        <label class="mode-card">
+          <input type="radio" name="setupMode" value="manual" checked>
+          <span class="mode-name">Manual <em>— recommended</em></span>
+          <span class="mode-desc">You type each pick. Nothing can go wrong that
+            you cannot see. Works with no network at all.</span>
+        </label>
+        <label class="mode-card">
+          <input type="radio" name="setupMode" value="assisted">
+          <span class="mode-name">Assisted</span>
+          <span class="mode-desc">Reads the league feed and <em>suggests</em>
+            what it saw. You accept or reject. A wrong feed cannot corrupt
+            your board.</span>
+        </label>
+        <label class="mode-card">
+          <input type="radio" name="setupMode" value="live">
+          <span class="mode-name">Live</span>
+          <span class="mode-desc">Applies the feed automatically. Least typing,
+            but trusts the network completely.</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="row setup-actions">
+      <button id="setupStart" class="primary big">Start drafting</button>
+      <button id="setupCancel" class="ghost hidden">Cancel</button>
+    </div>
+  </div>
+</div>
 
 <div id="fixDialog" class="modal hidden">
   <div class="modal-box">
@@ -99,7 +150,7 @@
 
 <footer>
   <span id="status">starting…</span>
-  <span class="hint">Enter = add · P = panic · U = undo</span>
+  <span class="hint">Enter = add · P = panic · U = undo · M = manual</span>
 </footer>
 
 <script src="/app.js"></script>

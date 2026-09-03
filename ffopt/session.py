@@ -24,6 +24,7 @@ import dataclasses
 import json
 import os
 import pathlib
+import random
 import time
 from typing import Iterable, Sequence
 
@@ -47,6 +48,17 @@ DEFAULT_HORIZON = 8
 #: anything older is leftover state rather than something to restore.
 STATE_MAX_AGE = 6 * 3600
 
+#: Rollout samples per candidate for live advice.
+#:
+#: The backtest uses 30, which is ample when averaging 200 drafts: the sampling
+#: error cancels out. A live draft is a single sample, so it does not cancel --
+#: and at 30 the top recommendation on an opening board was measured flipping
+#: between a 144-value RB and a 43-value QB across seeds, because their
+#: estimated values sit within two points of each other. Seeds agreed
+#: completely from 60 upward; 120 is double the measured convergence point and
+#: still an order of magnitude inside the pick timer.
+LIVE_TRIALS = 120
+
 
 class SessionError(ValueError):
     """Raised for operator errors that should be reported, not crash the app."""
@@ -69,8 +81,23 @@ class DraftSession:
     ):
         self.cfg = cfg or config.load()
         self.path = path or STATE_PATH
-        self.mode = "live"
+        #: Manual is the default because it is the only mode that cannot be
+        #: wrong about the board. Live polling is an optimisation the operator
+        #: opts into once they have seen it working; defaulting to it means a
+        #: silent feed failure or a mis-attributed pick corrupts the board
+        #: before anyone has confirmed the tool is even pointed at the right
+        #: draft.
+        self.mode = "manual"
+        #: False until the operator has been through the setup screen. Guessing
+        #: a seat is never acceptable -- it determines the entire pick schedule
+        #: -- so the interface asks rather than assumes.
+        self.configured = False
         self.seat: int | None = None
+        #: How self.seat was determined: "picks" (a pick attributed to us),
+        #: "draft_order" (the published draw), or "manual" (the operator's
+        #: word, never overridden). None means genuinely unknown -- which is
+        #: reported rather than guessed at.
+        self.seat_source: str | None = None
         self.claims: list[Claim] = []
         self.last_sync_error: str | None = None
         self.last_sync_at: float | None = None
@@ -194,7 +221,40 @@ class DraftSession:
         if seat is not None and not 1 <= seat <= self.cfg.num_agents:
             raise SessionError(f"seat must be 1..{self.cfg.num_agents}")
         self.seat = seat
+        self.seat_source = "manual" if seat is not None else None
         self.save()
+
+    def start(self, seat: int | None, mode: str) -> dict:
+        """Apply the setup screen's answers in one step.
+
+        Seat and mode are set together because they are one decision: the
+        operator is telling us where they sit and how the board will be kept.
+        Doing it atomically means there is no in-between state where the tool
+        is polling a live feed while still believing it holds a seat it does
+        not, which is exactly when picks get attributed to the wrong roster.
+        """
+        if mode not in MODES:
+            raise SessionError(f"unknown mode {mode!r}")
+        if seat is not None and not 1 <= seat <= self.cfg.num_agents:
+            raise SessionError(f"seat must be 1..{self.cfg.num_agents}")
+        self.seat = seat
+        self.seat_source = "manual" if seat is not None else None
+        self.mode = mode
+        self.configured = True
+        self.save()
+        return {"seat": self.seat, "mode": self.mode}
+
+    def go_manual(self) -> dict:
+        """Drop to manual entry immediately, from any state.
+
+        The escape hatch: whatever the feed is doing, stop listening to it and
+        let the operator drive. Deliberately does not touch the board, so it is
+        safe to hit at any moment -- it only changes where future picks come
+        from, never what has already been recorded.
+        """
+        self.mode = "manual"
+        self.save()
+        return {"mode": self.mode}
 
     def claim(self, player_id: str, source: str = "manual") -> pool.Item:
         if player_id not in self._by_id:
@@ -251,6 +311,13 @@ class DraftSession:
         return self._by_id.get(claim.player_id)
 
     def reset(self) -> None:
+        """Clear the board, keeping the operator's setup.
+
+        Seat and mode are deliberately preserved: resetting is what you do when
+        the *picks* are wrong, and being asked to re-enter who you are while a
+        draft clock is running would be a needless second problem. Use the
+        setup screen to change identity.
+        """
         self.claims = []
         self.save()
 
@@ -348,18 +415,41 @@ class DraftSession:
         return {"ok": True, "picks": self.picks_made}
 
     def _infer_seat(self, picks: Iterable[dict]) -> None:
+        """Determine our seat, from authoritative evidence only.
+
+        Two sources, both of which state the answer rather than imply it:
+
+        1. A pick already attributed to us carries its own ``draft_slot``.
+           This is ground truth and cannot be wrong.
+        2. ``draft_order`` maps user ids to seats once the order is drawn.
+
+        Nothing else is used. In particular ``slot_to_roster_id`` is *not* a
+        seat assignment: before the draw it is an identity mapping of slot to
+        roster id, so reading a seat out of it would be inventing a draft
+        order that does not exist yet. Guessing here is the worst possible
+        error, because the seat determines the entire pick schedule -- every
+        recommendation would be optimised for a position we do not hold, and
+        it would look confident while doing it.
+
+        Staying unknown is the correct outcome until the platform says
+        otherwise, so the operator is asked instead.
+        """
+        if self.seat_source in ("picks", "manual"):
+            return
+
         for pick in picks:
             if str(pick.get("picked_by") or "") == self.cfg.my_user_id:
                 slot = pick.get("draft_slot")
                 if slot:
-                    self.seat = int(slot)
+                    self.seat, self.seat_source = int(slot), "picks"
                     return
+
         try:
             order = (client.draft(self.cfg.draft_id) or {}).get("draft_order") or {}
-            if self.cfg.my_user_id in order:
-                self.seat = int(order[self.cfg.my_user_id])
         except Exception:  # noqa: BLE001 - seat stays unknown; the UI will ask
-            pass
+            return
+        if self.cfg.my_user_id in order:
+            self.seat, self.seat_source = int(order[self.cfg.my_user_id]), "draft_order"
 
     # -- advice ---------------------------------------------------------
     def panic(self, count: int = 5) -> list[dict]:
@@ -402,8 +492,22 @@ class DraftSession:
             "current_pick": self.current_pick,
         }
 
+    def _advice_seed(self, snap: dict) -> str:
+        """A seed that depends only on the board, never on the clock.
+
+        The rollout is a Monte Carlo estimate, so an unseeded run gives a
+        slightly different answer each time. On a board where the top two
+        candidates are within a point or two that is enough to reorder them,
+        and the operator sees the recommendation change while nothing about
+        the draft has. Deriving the seed from the position means the same board
+        always produces the same advice, and a genuinely new board produces a
+        genuinely independent estimate.
+        """
+        taken = ",".join(c.player_id for c in self.claims)
+        return f"{snap['seat']}:{snap['current_pick']}:{taken}"
+
     def recommendations(
-        self, trials: int = 30, count: int = 5, snapshot: dict | None = None
+        self, trials: int = LIVE_TRIALS, count: int = 5, snapshot: dict | None = None
     ) -> list[dict]:
         """Full optimizer advice. Falls back to panic ordering on any failure."""
         if snapshot is not None:
@@ -427,6 +531,7 @@ class DraftSession:
                 vor=vor, waivers=season.objective_waivers(avail),
                 trials=trials, horizon=DEFAULT_HORIZON,
                 bot_seats=set(self.cfg.bot_seats()),
+                rng=random.Random(self._advice_seed(snap)),
             )
         except Exception:  # noqa: BLE001 - advice must always be available
             return self.panic(count)
@@ -490,6 +595,8 @@ class DraftSession:
             "saved_at": time.time(),
             "mode": self.mode,
             "seat": self.seat,
+            "seat_source": self.seat_source,
+            "configured": self.configured,
             "claims": [[c.player_id, c.source, c.at] for c in self.claims],
         }
         tmp = self.path.with_suffix(".tmp")
@@ -529,8 +636,10 @@ class DraftSession:
                 % (age / 3600)
             )
             return False
-        self.mode = data.get("mode", "live")
+        self.mode = data.get("mode", "manual")
         self.seat = data.get("seat")
+        self.seat_source = data.get("seat_source")
+        self.configured = bool(data.get("configured"))
         self.claims = [
             Claim(pid, src, at) for pid, src, at in data.get("claims", [])
         ]
@@ -542,6 +651,8 @@ class DraftSession:
         return {
             "mode": self.mode,
             "seat": self.seat,
+            "seat_source": self.seat_source,
+            "configured": self.configured,
             "picks_made": self.picks_made,
             "total_picks": self.total_picks,
             "current_pick": self.current_pick,

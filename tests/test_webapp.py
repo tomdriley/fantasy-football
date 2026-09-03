@@ -63,6 +63,7 @@ class WebTestCase(unittest.TestCase):
         self.service.session.reset()
         self.service.session.set_seat(None)
         self.service.session.set_mode("live")
+        self.service.session.configured = False
         self.service.invalidate()
 
     # -- helpers --------------------------------------------------------
@@ -499,3 +500,67 @@ class TestFreshStart(unittest.TestCase):
         reloaded = session.DraftSession(cfg, board=_board(), path=path)
         reloaded.load()
         self.assertEqual(reloaded.picks_made, 0, "reset must persist")
+
+
+class TestSetupEndpoints(WebTestCase):
+    """The setup screen and the manual escape hatch, over HTTP."""
+
+    def test_start_sets_seat_and_mode_in_one_call(self):
+        code, body = self.post("/api/start", {"seat": 4, "mode": "assisted"})
+        self.assertEqual(code, 200)
+        self.assertEqual(body["state"]["seat"], 4)
+        self.assertEqual(body["state"]["mode"], "assisted")
+        self.assertTrue(body["state"]["configured"])
+
+    def test_start_accepts_an_undrawn_order(self):
+        code, body = self.post("/api/start", {"seat": None, "mode": "manual"})
+        self.assertEqual(code, 200)
+        self.assertIsNone(body["state"]["seat"])
+        self.assertTrue(body["state"]["configured"])
+
+    def test_start_rejects_a_bad_seat(self):
+        code, _ = self.post("/api/start", {"seat": 99, "mode": "manual"})
+        self.assertEqual(code, 400)
+        self.assertFalse(self.service.session.configured)
+
+    def test_manual_endpoint_preserves_the_board(self):
+        self.post("/api/start", {"seat": 2, "mode": "live"})
+        ids = [i.player_id for i in self.service.session.available()[:3]]
+        for pid in ids:
+            self.post("/api/claim", {"player_id": pid})
+        code, body = self.post("/api/manual")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["state"]["mode"], "manual")
+        self.assertEqual(body["state"]["picks_made"], 3)
+        self.assertEqual(body["state"]["seat"], 2)
+
+    def test_reset_keeps_seat_and_mode(self):
+        self.post("/api/start", {"seat": 6, "mode": "assisted"})
+        pid = self.service.session.available()[0].player_id
+        self.post("/api/claim", {"player_id": pid})
+        code, body = self.post("/api/reset")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["state"]["picks_made"], 0)
+        self.assertEqual(body["state"]["seat"], 6)
+        self.assertEqual(body["state"]["mode"], "assisted")
+
+    def test_advice_is_labelled_degraded_without_a_seat(self):
+        """Advice without a seat is best-available, not a plan; say so."""
+        self.post("/api/start", {"seat": None, "mode": "manual"})
+        _, body = self.get("/api/recommend?trials=1")
+        self.assertTrue(body["degraded"])
+        self.assertTrue(body["picks"])
+
+    def test_advice_is_not_degraded_once_a_seat_is_known(self):
+        self.post("/api/start", {"seat": 3, "mode": "manual"})
+        _, body = self.get("/api/recommend?trials=1")
+        self.assertFalse(body["degraded"])
+
+    def test_advice_recomputes_when_the_seat_arrives(self):
+        """The cache must not serve seat-blind advice after the draw."""
+        self.post("/api/start", {"seat": None, "mode": "manual"})
+        _, blind = self.get("/api/recommend?trials=1")
+        self.post("/api/seat", {"seat": 1})
+        _, seated = self.get("/api/recommend?trials=1")
+        self.assertFalse(seated["degraded"])
+        self.assertFalse(seated["cached"])
