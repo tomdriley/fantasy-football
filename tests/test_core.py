@@ -6,6 +6,8 @@ platform's own `pts_ppr` figure for every skill-position item. Any drift there
 means the payoff function is wrong.
 """
 
+import pathlib
+
 import unittest
 
 from ffopt import client, config, pool, scoring, valuation
@@ -187,3 +189,28 @@ class TestSeatMapping(unittest.TestCase):
         self.assertEqual(self.cfg.seat_of_pick(n), n)
         self.assertEqual(self.cfg.seat_of_pick(n + 1), n)
         self.assertEqual(self.cfg.seat_of_pick(2 * n), 1)
+
+
+class TestApiAccessRequirements(unittest.TestCase):
+    """Guards a load-bearing detail of the HTTP client.
+
+    The projections endpoint returns 403 Forbidden to requests without a
+    User-Agent header. Removing it would break every data fetch, and the
+    failure would look like the API being down rather than a client defect.
+    """
+
+    def test_client_sends_a_user_agent(self):
+        self.assertTrue(client.USER_AGENT)
+        source = pathlib.Path(client.__file__).read_text()
+        self.assertIn('headers={"User-Agent": USER_AGENT}', source)
+
+    def test_cache_write_is_atomic_and_process_unique(self):
+        """Parallel workers share the cache directory."""
+        source = pathlib.Path(client.__file__).read_text()
+        self.assertIn("os.getpid()", source)
+        self.assertIn("os.replace(tmp, path)", source)
+
+    def test_live_feed_is_never_cached(self):
+        """Stale picks are worse than no picks."""
+        source = pathlib.Path(client.__file__).read_text()
+        self.assertIn("ttl=0", source.split("def draft_picks")[1])
