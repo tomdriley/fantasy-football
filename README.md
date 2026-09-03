@@ -17,13 +17,14 @@ problem rather than a forecasting one.
 Start with the **algorithm doc** to audit correctness, the strategy plan for the
 reasoning, or the product design doc for what the tool does on draft day.
 
-> **Validated across three seasons.** Against realized 2023, 2024 and 2025
-> outcomes under controlled A/B conditions, the optimizer beats the platform's
-> autopick by **+8.3% pooled** (104/120 configurations, t=10.9) and never loses
-> in an individual season. Parameters were tuned on 2025 only -- the engine's
-> *weakest* year -- so the out-of-sample seasons scored better, the opposite of
-> overfitting. The edge tracks forecast quality and ranged from +2% to +14%.
-> See [algorithm.md](docs/algorithm.md) §10.
+> **Validated across five seasons (2021-2025), with adversarial checks.** The
+> optimizer beats the platform autopick by **+7.5%** and a competent human
+> heuristic by **+8.4%**, winning 174/200 controlled configurations
+> (bootstrap 95% CI [+150, +199] points). Positive in every season. It survives
+> a placebo test and still wins when half the league also optimises. Two further
+> seasons were examined and excluded for data contamination. The edge tracks
+> forecast quality and ranged from +2% to +14%, so the low end is entirely
+> possible in 2026. See [algorithm.md](docs/algorithm.md) §10.
 
 ## Layout
 

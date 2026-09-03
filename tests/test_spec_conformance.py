@@ -158,8 +158,19 @@ class TestSpecHonesty(unittest.TestCase):
 
     def test_flags_the_open_risks(self):
         """Remaining weaknesses must stay visible rather than be papered over."""
-        self.assertIn("still few", self.flat)
+        self.assertIn("one vendor and one era", self.flat)
+        self.assertIn("Design-out-of-sample is not established", self.flat)
         self.assertIn("optimizer's curse", self.flat.lower().replace("\u2019", "'"))
+
+    def test_records_the_excluded_seasons(self):
+        """Excluding data is the easiest place to hide a favourable result."""
+        self.assertIn("2020 is unusable", self.flat)
+        self.assertIn("78%", self.flat)
+
+    def test_keeps_the_adversarial_checks(self):
+        """Placebo and mixed-population results must stay reported."""
+        self.assertIn("Placebo", self.flat)
+        self.assertIn("Mixed population", self.flat)
 
     def test_records_the_harness_lesson(self):
         """The most transferable finding of the project."""

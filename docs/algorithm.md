@@ -8,13 +8,14 @@ Companion to [architecture.md](./architecture.md) (how the system is structured)
 [draft-strategy-plan.md](./draft-strategy-plan.md) (why this approach). This document is the one
 that matters for correctness.
 
-> **Status: VALIDATED ACROSS THREE SEASONS.** Measured against realized outcomes for 2023, 2024 and
-> 2025, the engine beats the platform's autopick by **+8.3% pooled** (104/120 configurations,
-> t=10.9), and never loses in any individual season. Parameters were tuned on 2025 only, which
-> turned out to be the engine's *weakest* year — so the two out-of-sample seasons scored *better*,
-> the opposite signature to overfitting. The margin varies with forecast quality: +9%, +14%, +2%.
-> An initial run showed a 6% *loss*; auditing the evaluation found four blocking flaws, all biased
-> against the engine. See [§10](#10-backtest-results).
+> **Status: VALIDATED ACROSS FIVE SEASONS, WITH ADVERSARIAL CHECKS.** Against realized outcomes for
+> 2021–2025 the engine beats the platform's autopick by **+7.5%** and a competent human heuristic by
+> **+8.4%**, winning 174/200 configurations (t=14.2, bootstrap 95% CI [+150, +199] points, excluding
+> zero). It is positive in **every** season. It survives a placebo test (edge vanishes to t=0.63 when
+> outcomes are decoupled from picks) and a mixed-population test (+9.1% when half the league also
+> optimises, so it is not merely exploiting a weak opponent). The gain is distributed across
+> positions and is *less* dependent on any single player than the baseline. Two further seasons were
+> examined and **excluded for data contamination**. See [§10](#10-backtest-results).
 
 ---
 
@@ -287,27 +288,58 @@ Concrete, executable checks. **None have been run.**
 Claims use 2025 pre-season information only; scores come from 2025 realized outcomes. Controlled
 A/B: one seat varies strategy, the other nine run autopick, identical seeds.
 
-### Headline: three seasons, 120 controlled configurations
+### Headline: five seasons, 200 controlled configurations
 
-| Season | autopick | optimizer | delta | wins | t | forecast quality (Spearman) |
-|---|---|---|---|---|---|---|
-| 2023 | 2341 | **2553** | **+9.1%** | 36/40 | 9.5 | 0.667 |
-| 2024 | 2361 | **2685** | **+13.7%** | 40/40 | 12.7 | 0.693 |
-| 2025 | 2301 | **2345** | **+1.9%** | 28/40 | 1.7 | 0.533 |
-| **pooled** | **2334** | **2528** | **+8.3%** | **104/120** | **10.9** | — |
+| Season | autopick | heuristic | optimizer | vs autopick | vs heuristic |
+|---|---|---|---|---|---|
+| 2021 | 2371 | 2356 | **2521** | **+6.3%** | +7.0% |
+| 2022 | 2313 | 2408 | **2457** | **+6.2%** | +2.0% |
+| 2023 | 2341 | 2297 | **2553** | **+9.1%** | +11.2% |
+| 2024 | 2361 | 2370 | **2685** | **+13.7%** | +13.3% |
+| 2025 | 2301 | 2154 | **2345** | **+1.9%** | +8.9% |
+| **pooled** | **2337** | **2317** | **2512** | **+7.5%** | **+8.4%** |
 
-**Parameters (λ=0.7, horizon=8) were tuned on 2025 alone.** 2023 and 2024 are therefore genuinely
-out-of-sample, and both scored *far better* than the tuning season. Overfitting produces the
-opposite pattern, so the tuning is not driving the result.
+174/200 configurations won, t=14.2, **bootstrap 95% CI [+150, +199] points** — comfortably excluding
+zero. `heuristic` is the honest human baseline (fill starters first by consensus, kicker last,
+defense second to last); it is reported here because beating only a machine default would be a weak
+claim.
+
+**Parameters (λ=0.7, horizon=8) were tuned on 2025 alone**, which is the engine's *weakest* season.
+Overfitting produces the opposite pattern. The claim is nonetheless narrower than "out-of-sample":
+the objective's design and the `GAMES_MISSED` constants were also chosen while looking at 2025, so
+this is *parameter*-out-of-sample, not *design*-out-of-sample. Mitigating that, the injury rates were
+re-derived from each season independently and vary by at most 0.8 games from the constants in use —
+so the engine ran on slightly wrong rates in four of five seasons and won anyway.
+
+### Data integrity: two seasons excluded
+
+Historical projections were audited for contamination before use, because a large out-of-sample gain
+is more often a broken harness than a good model. **2020 is unusable**: 78% of its "projections"
+match realized outcomes within 1 point, and rank correlation to outcomes is 0.966. That is hindsight,
+not forecasting. 2019 also sits apart from the clean cluster. Among players who actually produced,
+the exact-match rate is 1–2% for 2021–2025 against 17% for 2019–2020.
+
+An earlier version of this audit flagged *every* season as suspect at ~10%, which was a false
+positive: it counted players who scored near zero and were projected near zero, who trivially agree.
+Restricting to producing players separates the signal cleanly.
+
+### Adversarial checks
+
+| Test | Result | What it rules out |
+|---|---|---|
+| **Placebo** — realized outcomes shuffled within position | +2.6%, **t=0.63** | An artifact of roster *shape* rather than player selection. A real edge must vanish here, and it does |
+| **Mixed population** — 5 optimizer seats vs 5 autopick seats | **+9.1%**, t=9.7 | That the edge is merely exploiting a predictable opponent. It survives smart rivals |
+| **Per-position attribution** | RB +91, WR +43, QB +25, TE +1, K −1, DEF −4 | Concentration in one position. The gain is distributed across the high-slot-count types |
+| **Leave-one-out** | optimizer depends on its best player for 7.5% of score; autopick 8.2% | That one lucky pick drives the result. The optimizer is *less* single-player dependent |
 
 **The edge tracks forecast quality.** The engine leverages projections; autopick follows consensus.
-In years when projections were accurate (2024, Spearman 0.693) the edge was large; in the year they
-were poor (2025, 0.533) it nearly vanished. 2026 forecast quality is unknowable in advance, so the
-honest expectation for tomorrow is *somewhere in this range, plausibly small*.
+In years when projections ranked outcomes well (2024, Spearman 0.693) the edge was large; in the
+year they ranked poorly (2025, 0.533) it nearly vanished. 2026 forecast quality is unknowable in
+advance, so the honest expectation for tomorrow is *somewhere in the +2% to +14% range, and the low
+end is entirely possible*.
 
-The same ordering holds whether or not the roster is managed weekly (+8.3% vs +8.0% pooled), so the
-earlier waiver-dependence was an artifact of the single weak season rather than a structural
-property.
+The ordering holds whether or not the roster is managed weekly, so the earlier waiver-dependence was
+an artifact of the single weak season rather than a structural property.
 
 ### The first run was wrong, and the audit is the lesson
 
@@ -373,8 +405,11 @@ horizon acts as regularisation. Default is 8.
 
 ### Remaining weaknesses
 
-- **Three seasons is still few.** 2023–2025 share a forecasting vendor, a scoring format and an
-  era. A structural change in 2026 would not be captured.
+- **Five seasons share one vendor and one era.** All use the same forecast provider and scoring
+  format. A structural change in 2026 would not be captured, and 2019–2020 could not be used to
+  widen the window because their data is contaminated.
+- **Design-out-of-sample is not established.** The objective and its constants were shaped while
+  looking at 2025. Only λ and the horizon are strictly held out.
 - **The edge is not stable.** It ranged from +2% to +14% across three seasons and is a function of
   forecast quality, which is unknown ahead of the draft.
 - **Clustered observations.** 60 configurations are 6 independent seeds × 10 correlated seats. The
