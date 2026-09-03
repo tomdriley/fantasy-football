@@ -542,7 +542,7 @@ nine rosters it competed with:
 | 9 | 5 | 1912.0 |
 | 10 | 10 | 1910.0 |
 
-**First of ten, +10.6% over the field average** — against a backtest prediction of +10.1%. The
+**First of ten, +10.1% over the field average** — against a backtest prediction of +10.1%. (The raw figure at the final whistle was +10.6%; see the waiver correction below.) The
 roster is legal with every slot fillable, and totals +532 points over replacement.
 
 This is one sample and is *not* independent confirmation of the +10% figure: the same objective
@@ -564,9 +564,35 @@ Teams that spent an early pick on a quarterback or kicker averaged 1953; teams t
 2042. **The trap cost 90 points**, which is the mechanism in §10 (`RB → QB`, `RB → DEF` swaps) showing
 up in a live room rather than a simulation.
 
-Seat 7 is the clearest case: five running backs and five receivers, and no kicker at all. That is the
-"never end the draft unable to fill a slot" rule being violated exactly as described — a mandatory
-slot scoring zero every week for the whole season.
+Seat 7 is the clearest case: five running backs and five receivers, and no kicker at all — a
+mandatory slot scoring zero every week.
+
+### The waiver assumption, tested live — and found wrong
+
+Within minutes of the draft ending, seat 7 signed a free-agent kicker. That is a direct test of
+§6.1, the assumption this document already names as the weakest link, and it failed:
+
+| | |
+|---|---|
+| Cost of the empty slot, per `objective_waivers()` | **−91.4** |
+| Actual cost, best drafted kicker vs best kicker left free | **−7.0** |
+
+The pessimistic waiver model overstates the damage by more than an order of magnitude. Thirteen
+kickers were still unowned after the draft, four of them within 7 points of the best one taken.
+A position with negligible spread and abundant free supply simply cannot be *lost* by failing to
+draft it.
+
+Corrected for the pickup, the field average rises and this engine's margin falls from +10.6% to
+**+10.1%** — coincidentally the exact backtest figure, and the number that should be quoted. Seat 7
+moves from 7th to 3rd on one waiver claim.
+
+**This does not overturn the decision to use the pessimistic model.** §10's comparison already
+measured both and found the pessimistic one dominates in *both* worlds (+9.1%/+10.0% versus
++7.9%/+7.7%), because it is the assumption that reliably fills mandatory slots, and the penalty for
+being wrong about a kicker is tiny while the penalty for leaving a *scarce* slot empty is not. What
+the live evidence changes is the honesty of the claim: the model is instrumentally right and
+factually wrong, and margins computed against a roster with an unfilled slot are inflated until that
+roster is repaired.
 
 ### Adversarial checks
 
