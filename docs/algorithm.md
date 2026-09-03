@@ -342,6 +342,42 @@ Deciding and scoring therefore use *different* waiver assumptions, which is corr
 inconsistent: the realistic baselines describe what a roster is worth, the pessimistic one produces
 better decisions.
 
+### Exploiting the deterministic seats: a negative result
+
+Four of the ten seats are unowned and will run the platform's autopick, which
+follows consensus order exactly. That is a perfectly predictable opponent, and
+the rollout can be told either how *many* such seats exist or exactly *which*
+ones. The distinction is not cosmetic: the frequency approximation is badly
+miscalibrated for a middle seat, where every pick between the first and second
+turn is a bot but the model treats 44% of them as such.
+
+It makes no measurable difference.
+
+| Bot model | pooled score | t vs baseline |
+|---|---|---|
+| none (0 bots assumed) | 2505.3 | — |
+| count only (4 bots) | 2504.9 | −0.04 |
+| exact seats {7,8,9,10} | 2514.5 | +0.84 |
+
+Tested again with far more erratic human opponents, the condition under which
+bots and humans differ most and positional knowledge should pay off best:
+
+| Human behaviour | blind | aware | t |
+|---|---|---|---|
+| as modelled | 2501.5 | 2501.5 | 0.00 |
+| much more erratic | 2491.5 | 2503.2 | 0.64 |
+
+The likely explanation is that the rollout averages over many simulated drafts,
+and a bot taking the consensus-best player differs little from a human who
+usually takes it, so the distinction washes out. The capability is retained
+because it is a more faithful model and is directionally positive, but **it is
+not claimed as an improvement**.
+
+Worth noting separately: this investigation found that every backtest to that
+point had run with zero modelled bots, because the parameter was being silently
+discarded. The validated result was therefore achieved while treating all nine
+opponents as humans.
+
 ### Adversarial checks
 
 | Test | Result | What it rules out |
