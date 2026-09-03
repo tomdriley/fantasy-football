@@ -375,6 +375,7 @@ function openFix(pick) {
   $('fixPick').textContent = String(pick);
   $('fixQuery').value = '';
   $('fixSuggest').innerHTML = '';
+  fixMsg('');
   $('fixDialog').classList.remove('hidden');
   $('fixQuery').focus();
 }
@@ -385,16 +386,35 @@ function closeFix() {
 }
 
 async function fixSearch(q) {
-  if (!q.trim()) { $('fixSuggest').innerHTML = ''; return; }
+  if (!q.trim()) { $('fixSuggest').innerHTML = ''; return []; }
   const r = await api('/api/search?q=' + encodeURIComponent(q.trim()));
+  const results = (r.body && r.body.results) || [];
   const box = $('fixSuggest');
   box.innerHTML = '';
-  ((r.body && r.body.results) || []).forEach((p) => {
+  results.forEach((p) => {
     const b = document.createElement('button');
     b.innerHTML = `${escapeHtml(p.name)} <span class="s-pos">${p.pos} · adp ${p.adp ?? '—'}</span>`;
     b.onclick = () => applyFix(p.player_id);
     box.appendChild(b);
   });
+  return results;
+}
+
+/* The Replace button must actually replace. Searching and waiting for a second
+ * click looks identical to a button that does nothing, which under a running
+ * clock is worse than no button at all. An unambiguous name is applied
+ * immediately; anything else falls back to offering the choices. */
+async function applyFixFromQuery() {
+  const q = $('fixQuery').value;
+  if (!q.trim()) { fixMsg('type a name to replace this pick'); return; }
+  const results = await fixSearch(q);
+  if (results.length === 1) { await applyFix(results[0].player_id); return; }
+  fixMsg(results.length ? 'several match — pick one below' : `no match for "${q.trim()}"`);
+}
+
+function fixMsg(text) {
+  const el = $('fixMsg');
+  if (el) el.textContent = text;
 }
 
 async function applyFix(playerId) {
@@ -457,10 +477,10 @@ function bind() {
   };
   $('dismissProposal').onclick = () => $('proposal').classList.add('hidden');
   $('fixCancel').onclick = closeFix;
-  $('fixApply').onclick = () => fixSearch($('fixQuery').value);
+  $('fixApply').onclick = applyFixFromQuery;
   $('fixRemove').onclick = removeFix;
   $('fixQuery').oninput = (e) => fixSearch(e.target.value);
-  $('fixQuery').onkeydown = (e) => { if (e.key === 'Enter') fixSearch(e.target.value); };
+  $('fixQuery').onkeydown = (e) => { if (e.key === 'Enter') applyFixFromQuery(); };
 
   document.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;

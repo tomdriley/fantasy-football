@@ -375,10 +375,33 @@ class DraftSession:
         options.sort(key=lambda i: self._tier_rank.get(i.player_id, 1 << 30))
         return [self._brief(i) for i in options[:count]]
 
-    def recommendations(self, trials: int = 30, count: int = 5) -> list[dict]:
+    def capture(self) -> dict:
+        """An immutable snapshot of everything a recommendation needs.
+
+        Taken under the service lock so the slow computation can then run
+        *without* holding it. Otherwise a five-second simulation blocks the
+        operator from recording a pick or hitting panic, which is unacceptable
+        when panic exists precisely for the moment the clock is running out.
+        """
+        return {
+            "available": self.available(),
+            "roster": list(self.my_roster()),
+            "seat": self.seat,
+            "current_pick": self.current_pick,
+        }
+
+    def recommendations(
+        self, trials: int = 30, count: int = 5, snapshot: dict | None = None
+    ) -> list[dict]:
         """Full optimizer advice. Falls back to panic ordering on any failure."""
-        avail = self.available()
-        if not avail or self.seat is None:
+        if snapshot is not None:
+            return self._recommend_from(snapshot, trials, count)
+        return self._recommend_from(self.capture(), trials, count)
+
+    def _recommend_from(self, snap: dict, trials: int, count: int) -> list[dict]:
+        avail = snap["available"]
+        seat = snap["seat"]
+        if not avail or seat is None:
             return self.panic(count)
         try:
             baselines = valuation.compute_baselines(avail, self.cfg)
@@ -387,8 +410,8 @@ class DraftSession:
                 for i in avail
             }
             recs = optimizer.recommend(
-                self.my_roster(), avail, self.cfg,
-                seat=self.seat, current_pick=self.current_pick,
+                snap["roster"], avail, self.cfg,
+                seat=seat, current_pick=snap["current_pick"],
                 vor=vor, waivers=season.objective_waivers(avail),
                 trials=trials, horizon=DEFAULT_HORIZON,
                 bot_seats=set(self.cfg.bot_seats()),

@@ -58,12 +58,27 @@ class DraftService:
             return self.session.snapshot()
 
     def recommend(self, trials: int = 30) -> dict:
+        """Compute advice without holding the lock across the simulation.
+
+        The simulation takes seconds on a full board. Holding the lock for its
+        duration would block claims, state reads and the panic button, so the
+        inputs are captured under the lock, the work happens outside it, and the
+        result is only cached if the board has not moved meanwhile.
+        """
         with self._lock:
             key = self._key("rec")
-            if key not in self._cache:
+            cached = self._cache.get(key)
+            if cached is not None:
+                return {"picks": cached, "cached": True}
+            snapshot = self.session.capture()
+
+        picks = self.session.recommendations(trials=trials, snapshot=snapshot)
+
+        with self._lock:
+            if self._key("rec") == key:  # board unchanged during the computation
                 self._cache.clear()
-                self._cache[key] = self.session.recommendations(trials=trials)
-            return {"picks": self._cache[key], "cached": True}
+                self._cache[key] = picks
+            return {"picks": picks, "cached": False}
 
     def panic(self) -> dict:
         with self._lock:

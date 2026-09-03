@@ -377,3 +377,56 @@ class TestProposeEndpoint(WebTestCase):
         self.assertEqual(status, 200)
         self.assertFalse(body["ok"])
         self.assertIn("state", body)
+
+
+class TestLockContention(WebTestCase):
+    """A running simulation must not block the operator.
+
+    Recommendations take seconds on a full board. If that work is done while
+    holding the service lock, the operator cannot record a pick or hit panic
+    until it finishes -- and panic exists precisely for the moment the clock is
+    running out.
+    """
+
+    def test_panic_is_not_blocked_by_a_running_recommendation(self):
+        import threading
+        import time
+
+        self.post("/api/seat", {"seat": 5})
+        timings = {}
+
+        def slow():
+            self.service.recommend(trials=30)
+
+        def panic():
+            time.sleep(0.15)
+            start = time.perf_counter()
+            self.service.panic()
+            timings["panic"] = time.perf_counter() - start
+
+        def claim():
+            time.sleep(0.2)
+            start = time.perf_counter()
+            self.service.claim("1", None)
+            timings["claim"] = time.perf_counter() - start
+
+        threads = [threading.Thread(target=f) for f in (slow, panic, claim)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertLess(timings["panic"], 1.0,
+                        f"panic blocked for {timings['panic']:.2f}s")
+        self.assertLess(timings["claim"], 1.0,
+                        f"claim blocked for {timings['claim']:.2f}s")
+
+    def test_result_is_not_cached_if_the_board_moved(self):
+        """A recommendation computed against a stale board must not be stored."""
+        self.post("/api/seat", {"seat": 5})
+        snapshot = self.service.session.capture()
+        self.service.claim("1", None)
+        picks = self.service.session.recommendations(trials=2, snapshot=snapshot)
+        self.assertTrue(picks)
+        fresh = self.service.recommend(trials=2)
+        self.assertNotIn("1", [p["player_id"] for p in fresh["picks"]])

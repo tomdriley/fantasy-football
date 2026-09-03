@@ -533,3 +533,85 @@ class TestUnlistedPlayers(unittest.TestCase):
         """The feed may contain them; the operator must not be able to type one."""
         with self.assertRaises(session.SessionError):
             self.s.claim("NOT_ON_OUR_BOARD")
+
+
+class TestInvariantsUnderMixedOperations(unittest.TestCase):
+    """The board must stay self-consistent however it is edited.
+
+    Because a claim's position is its pick number, an off-by-one anywhere
+    reassigns players to the wrong seats. That failure is silent, so it is
+    checked directly: the roster derived from the seat must always equal the
+    claims sitting at that seat's pick positions, and no player may appear
+    twice.
+    """
+
+    def _check(self, s):
+        mine = set(s.cfg.pick_numbers(s.seat))
+        expected = [
+            c.player_id for n, c in enumerate(s.claims, 1)
+            if n in mine and c.player_id in s._by_id
+        ]
+        self.assertEqual([p.player_id for p in s.my_roster()], expected)
+        self.assertEqual(len(s.claimed_ids), len(s.claims), "duplicate claim")
+
+    def test_invariant_holds_through_an_edit_sequence(self):
+        s = _session()
+        s.set_seat(4)
+        for i in range(1, 9):
+            s.claim(str(i))
+        self._check(s)
+        for step in (lambda: s.undo(),
+                     lambda: s.correct(2, "50"),
+                     lambda: s.insert(1, "60"),
+                     lambda: s.remove(3),
+                     lambda: s.set_seat(9),
+                     lambda: s.set_seat(4)):
+            step()
+            self._check(s)
+
+    def test_invariant_holds_through_random_operations(self):
+        import random
+        s = _session()
+        s.set_seat(4)
+        rng = random.Random(7)
+        for _ in range(400):
+            roll = rng.random()
+            try:
+                if roll < 0.55 or s.picks_made == 0:
+                    free = [i for i in s.board if i.player_id not in s.claimed_ids]
+                    if free and not s.complete:
+                        s.claim(rng.choice(free).player_id)
+                elif roll < 0.70:
+                    s.undo()
+                elif roll < 0.80:
+                    free = [i for i in s.board if i.player_id not in s.claimed_ids]
+                    if free:
+                        s.correct(rng.randint(1, s.picks_made),
+                                  rng.choice(free).player_id)
+                elif roll < 0.90:
+                    free = [i for i in s.board if i.player_id not in s.claimed_ids]
+                    if free:
+                        s.insert(rng.randint(1, s.picks_made + 1),
+                                 rng.choice(free).player_id)
+                else:
+                    s.remove(rng.randint(1, s.picks_made))
+            except session.SessionError:
+                pass  # rejected operations are fine; corruption is not
+        self._check(s)
+
+    def test_invariant_holds_across_syncs(self):
+        from ffopt import client
+        s = _session()
+        s.set_seat(4)
+        for i in range(1, 9):
+            s.claim(str(i))
+        original = client.draft_picks
+        try:
+            client.draft_picks = lambda _d: [{"player_id": str(i)} for i in range(1, 4)]
+            s.sync()
+            self._check(s)
+            client.draft_picks = lambda _d: [{"player_id": str(i)} for i in range(1, 20)]
+            s.sync()
+            self._check(s)
+        finally:
+            client.draft_picks = original
