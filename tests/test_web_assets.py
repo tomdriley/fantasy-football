@@ -193,3 +193,21 @@ class TestPollingBehaviour(unittest.TestCase):
         """Clicking means different things one pick apart."""
         self.assertIn('id="whoFor"', HTML)
         self.assertIn("Recording YOUR pick", JS)
+
+    def test_live_mode_has_a_stalled_feed_check(self):
+        """In live mode the drift check is tautological.
+
+        The board *is* the feed there, so the two always agree and the drift
+        warning can never fire. A feed that quietly stops publishing looks
+        exactly like "nobody has picked yet", so it must be caught by elapsed
+        time instead.
+        """
+        self.assertIn("checkFeedStalled", JS)
+        self.assertIn("pick_timer", JS)
+        self.assertIn("gone quiet", JS)
+
+    def test_the_stalled_check_is_skipped_in_manual(self):
+        """Manual mode never reads the feed, so a quiet feed means nothing."""
+        block = JS[JS.index("function checkFeedStalled"):]
+        block = block[:block.index("async function checkAlignment")]
+        self.assertIn("s.mode === 'manual'", block)

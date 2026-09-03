@@ -24,6 +24,8 @@ const App = {
   alignment: null,
   driftIgnored: null,
   alignTick: 0,
+  lastCount: null,
+  lastCountAt: null,
 };
 
 /* ---------- transport ---------- */
@@ -145,7 +147,39 @@ async function goManual() {
  * check never writes; manual mode exists so the operator is not at the mercy
  * of the feed, and asking "do we agree?" does not surrender that. */
 
+/* In live mode the drift check is tautological: the board *is* the feed, so
+ * the two always agree and the warning can never fire. The real risk there is
+ * different -- a feed that has quietly stopped publishing while the room keeps
+ * drafting. That looks identical to "nobody has picked yet", so it is caught by
+ * the clock instead: if no new pick has appeared in materially longer than the
+ * pick timer, something is wrong. */
+function checkFeedStalled() {
+  const s = App.state;
+  const box = $('drift');
+  if (!s || s.mode === 'manual' || s.complete || !s.picks_made) return false;
+
+  if (s.picks_made !== App.lastCount) {
+    App.lastCount = s.picks_made;
+    App.lastCountAt = Date.now();
+    return false;
+  }
+  if (!App.lastCountAt) { App.lastCountAt = Date.now(); return false; }
+
+  const quiet = (Date.now() - App.lastCountAt) / 1000;
+  const limit = (s.pick_timer || 60) * 2;
+  if (quiet < limit) return false;
+
+  $('driftText').innerHTML =
+    `<b>Feed has gone quiet.</b> No new pick in <b>${Math.round(quiet)}s</b> ` +
+    `(timer is ${s.pick_timer || 60}s). Either the room is paused, or the feed ` +
+    `has stopped publishing and this board is stale. Check Sleeper: if it shows ` +
+    `picks this does not, take over manually.`;
+  box.classList.remove('hidden');
+  return true;
+}
+
 async function checkAlignment() {
+  if (checkFeedStalled()) return;
   const r = await api('/api/alignment', {}, 8000);
   if (!r.ok || !r.body || !r.body.checked) return;   // offline: nothing to say
   const a = r.body;
