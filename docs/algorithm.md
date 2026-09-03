@@ -524,6 +524,50 @@ of 0.0s and reported "picks arrived in batches -- consistent with a feed written
 It was measuring its own start time. Backlog is now counted and excluded, and fewer than three
 timed arrivals reports inconclusive rather than guessing.
 
+## 10a. The actual draft, 2026-09-03
+
+The engine drafted seat 3 in the real event, in live mode. Scored with its own objective against the
+nine rosters it competed with:
+
+| Rank | Seat | Value |
+|---|---|---|
+| **1** | **3 (this engine)** | **2196.5** |
+| 2 | 1 | 2083.4 |
+| 3 | 4 | 2026.4 |
+| 4 | 6 | 2017.6 |
+| 5 | 8 | 1995.0 |
+| 6 | 2 | 1994.2 |
+| 7 | 7 | 1983.3 |
+| 8 | 9 | 1947.7 |
+| 9 | 5 | 1912.0 |
+| 10 | 10 | 1910.0 |
+
+**First of ten, +10.6% over the field average** — against a backtest prediction of +10.1%. The
+roster is legal with every slot fillable, and totals +532 points over replacement.
+
+This is one sample and is *not* independent confirmation of the +10% figure: the same objective
+scored both the picks and the outcome, so it measures internal consistency, not truth. The season
+result is the real test.
+
+What is genuinely informative is that the specific failure modes the model predicted appeared
+unprompted in the field, and cost what it said they would:
+
+| Trap | Who | Where they finished |
+|---|---|---|
+| Quarterback in round 1 | seat 2 | 6th |
+| Quarterback in round 3 | seat 5 | 9th |
+| Kicker in round 8 | seat 10 | **10th** |
+| Kicker in round 10 | seat 8 | 5th |
+| **Never drafted a kicker at all** | seat 7 | 7th |
+
+Teams that spent an early pick on a quarterback or kicker averaged 1953; teams that did not averaged
+2042. **The trap cost 90 points**, which is the mechanism in §10 (`RB → QB`, `RB → DEF` swaps) showing
+up in a live room rather than a simulation.
+
+Seat 7 is the clearest case: five running backs and five receivers, and no kicker at all. That is the
+"never end the draft unable to fill a slot" rule being violated exactly as described — a mandatory
+slot scoring zero every week for the whole season.
+
 ### Adversarial checks
 
 | Test | Result | What it rules out |
