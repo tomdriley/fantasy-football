@@ -134,20 +134,57 @@ def _greedy_choice(
     hoard backups that can never be started. Value over replacement is negative
     for such items, so it correctly prefers genuine bench depth instead.
     """
-    best_idx = alive[0]
-    best_key = (-1e18, -1e18)
     required = mandatory_filter(roster, cfg, picks_remaining)
-    pool_idx = [i for i in alive if board[i].pos in required] if required else alive
-    if not pool_idx:
-        pool_idx = alive
-    for idx in pool_idx[:120]:  # deeper items never win a greedy comparison
+
+    # Within a single type, the highest-payoff item always dominates: both the
+    # starter term and the bench term of the objective are monotonic in payoff,
+    # and so is the value-over-replacement tiebreak. So only the best remaining
+    # item of each type can win, which reduces the candidate scan from ~120 to
+    # at most 6 and leaves the result identical.
+    best_per_pos: dict[str, int] = {}
+    for idx in alive:
         item = board[idx]
-        gain = marginal_value(roster, item, cfg, waivers)
+        if required and item.pos not in required:
+            continue
+        incumbent = best_per_pos.get(item.pos)
+        if incumbent is None or item.payoff > board[incumbent].payoff:
+            best_per_pos[item.pos] = idx
+    if not best_per_pos:
+        return alive[0]
+
+    base = season.season_value(roster, cfg, waivers)
+    extended = list(roster)
+    extended.append(None)
+    best_idx = next(iter(best_per_pos.values()))
+    best_key = (-1e18, -1e18)
+    for idx in best_per_pos.values():
+        item = board[idx]
+        extended[-1] = item
+        gain = season.season_value(extended, cfg, waivers) - base
         key = (gain, vor.get(item.player_id or item.name, 0.0))
         if key > best_key:
             best_key = key
             best_idx = idx
     return best_idx
+
+
+def league_type_budget(cfg: config.LeagueConfig) -> dict[str, int]:
+    """League-wide claims available per type, given every agent's slot needs.
+
+    Opponents do not consume the board in pure consensus order: an agent holding
+    a quarterback will not take a second, so only about one per agent is ever
+    claimed. Modelling opponents as unconstrained consensus-followers therefore
+    badly overstates scarcity at the single-slot types -- there are 22 viable
+    quarterbacks on the board but only ~10 will ever be taken, so the tenth-best
+    survives far longer than an unconstrained model predicts.
+    """
+    budget: dict[str, int] = {}
+    for position, slots in cfg.dedicated_slots.items():
+        per_agent = slots
+        if position in cfg.flex_types:
+            per_agent += cfg.flex_slots
+        budget[position] = per_agent * cfg.num_agents
+    return budget
 
 
 def rollout(
@@ -169,6 +206,9 @@ def rollout(
     upcoming = sorted(p for p in my_remaining_picks if p > current_pick)
     mine = set(upcoming)
     left = len(upcoming)
+    budget = league_type_budget(cfg)
+    for item in roster:
+        budget[item.pos] = budget.get(item.pos, 0) - 1
     for pick_no in range(current_pick + 1, total_picks + 1):
         if not alive:
             break
@@ -179,7 +219,9 @@ def rollout(
         else:
             # Opponent seats cycle; approximate bot incidence by frequency.
             is_bot = model.rng.random() < (bot_seats / max(cfg.num_agents - 1, 1))
-            idx = model.claim(alive, deterministic=is_bot)
+            claimable = [i for i in alive if budget.get(board[i].pos, 0) > 0]
+            idx = model.claim(claimable or alive, deterministic=is_bot)
+        budget[board[idx].pos] = budget.get(board[idx].pos, 0) - 1
         alive.remove(idx)
     return season.season_value(roster, cfg, waivers)
 

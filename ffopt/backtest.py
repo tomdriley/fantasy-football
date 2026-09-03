@@ -30,7 +30,7 @@ import dataclasses
 import random
 from typing import Callable, Sequence
 
-from . import availability, config, optimizer, pool, scoring, season, valuation
+from . import availability, config, optimizer, pool, scoring, season, shrinkage, valuation
 
 Strategy = Callable[..., int]
 
@@ -146,12 +146,13 @@ def pick_projection_greedy(
 
 def pick_optimizer(
     roster: Sequence[pool.Item], alive: list[int], ctx: DraftContext,
-    seat: int = 1, current_pick: int = 1, trials: int = 6, **_
+    seat: int = 1, current_pick: int = 1, trials: int = 30,
+    num_candidates: int = 8, **_
 ) -> int:
     sub = [ctx.board[i] for i in alive]
     recs = optimizer.recommend(
         list(roster), sub, ctx.cfg, seat=seat, current_pick=current_pick,
-        vor=ctx.vor, waivers=ctx.waivers, num_candidates=4, trials=trials,
+        vor=ctx.vor, waivers=ctx.waivers, num_candidates=num_candidates, trials=trials,
         reach=availability.DEFAULT_REACH, bot_seats=ctx.bot_seats, rng=ctx.rng,
     )
     chosen = recs[0].item
@@ -298,8 +299,9 @@ def score_roster_weekly(
     games: dict[str, float],
     cfg: config.LeagueConfig,
     *,
-    weeks: int = 17,
+    weeks: int = season.WEEKS,
     seed: int = 0,
+    waivers: dict[str, float] | None = None,
 ) -> float:
     """Season score with weekly lineups and realized availability.
 
@@ -312,6 +314,15 @@ def score_roster_weekly(
     Availability draws are keyed on player id so the same player is available in
     the same weeks for every strategy being compared -- common random numbers,
     so differences reflect roster construction rather than sampling noise.
+
+    `waivers` controls what an unfillable starting slot is worth. Passing None
+    scores it as zero, which assumes the roster is never touched after the
+    draft. Passing baselines credits the slot at free-agent level, which assumes
+    a replacement is added that week. The distinction is not cosmetic: it is
+    worth roughly 50 points a season at a one-slot type, and it decides whether
+    carrying a backup is necessary or wasteful. The season objective assumes
+    streaming is possible, so scoring without it measures a different strategy
+    than the one being optimised.
     """
     schedule: dict[str, set[int]] = {}
     for item in roster:
@@ -337,8 +348,13 @@ def score_roster_weekly(
             for i in roster
             if week in schedule.get(i.player_id, ())
         ]
-        starters, _ = season.assign_starters(available, cfg)
+        starters, filled = season.assign_starters(available, cfg)
         total += sum(i.payoff for i in starters)
+        if waivers:
+            for position, slots in cfg.dedicated_slots.items():
+                empty = slots - filled.get(position, 0)
+                if empty > 0:
+                    total += empty * waivers.get(position, 0.0) / weeks
     return total
 
 
@@ -375,9 +391,17 @@ def build_context(
     *,
     seed: int = 0,
     board_size: int = 190,
+    lam: float = 0.0,
 ) -> tuple[DraftContext, dict[str, float]]:
-    """Board and valuations from PRE-SEASON information only."""
+    """Board and valuations from PRE-SEASON information only.
+
+    `lam` shrinks forecast payoffs toward the market-implied prior, which
+    counteracts the selection bias that comes from maximising over noisy
+    forecasts. See ffopt/shrinkage.py.
+    """
     items = pool.build(projections, cfg.scoring_weights)
+    if lam:
+        items = shrinkage.shrink(items, lam)
     baselines = valuation.compute_baselines(items, cfg)
     vor = {
         (i.player_id or i.name): valuation.value_over_replacement(i, baselines)

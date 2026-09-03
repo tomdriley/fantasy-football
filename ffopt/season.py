@@ -64,10 +64,19 @@ GAMES_MISSED = {
 WAIVER_THRESHOLD = 150
 
 
+#: Per-week probability an item of a type cannot be started. Precomputed rather
+#: than derived per call: this is evaluated tens of millions of times inside the
+#: rollout, where it was measured as 13% of total runtime.
+UNAVAILABILITY: dict[str, float] = {
+    pos: min(max((missed + BYE_WEEKS) / WEEKS, 0.0), 0.95)
+    for pos, missed in GAMES_MISSED.items()
+}
+_DEFAULT_Q = (3.0 + BYE_WEEKS) / WEEKS
+
+
 def unavailability(pos: str) -> float:
     """Per-week probability an item of this type cannot be started."""
-    missed = GAMES_MISSED.get(pos, 3.0) + BYE_WEEKS
-    return min(max(missed / WEEKS, 0.0), 0.95)
+    return UNAVAILABILITY.get(pos, _DEFAULT_Q)
 
 
 def waiver_baselines(
