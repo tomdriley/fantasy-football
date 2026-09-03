@@ -63,6 +63,17 @@ def read_state(
     )
 
 
+def _unfilled(roster: Sequence[pool.Item], cfg: config.LeagueConfig) -> dict[str, int]:
+    """Dedicated starting slots this roster cannot fill."""
+    counts: dict[str, int] = {}
+    for item in roster:
+        counts[item.pos] = counts.get(item.pos, 0) + 1
+    return {
+        position: max(0, slots - counts.get(position, 0))
+        for position, slots in cfg.dedicated_slots.items()
+    }
+
+
 def _slot_status(roster: Sequence[pool.Item], cfg: config.LeagueConfig) -> str:
     counts: dict[str, int] = {}
     for item in roster:
@@ -111,18 +122,44 @@ def render(
 ) -> str:
     picks = cfg.pick_numbers(seat)
     current = state.picks_made + 1
-    upcoming = [p for p in picks if p > current]
-    gap = (upcoming[0] - current) if upcoming else 0
-    rnd = (current - 1) // cfg.num_agents + 1
-
-    out = [BAR]
     mine_now = current in set(picks)
-    header = "YOUR PICK" if mine_now else f"waiting (seat {state.on_the_clock} on the clock)"
+    upcoming = [p for p in picks if p > current or (p == current and not mine_now)]
+    rnd = (current - 1) // cfg.num_agents + 1
+    roster_full = len(state.my_roster) >= cfg.rounds
+
+    total = cfg.rounds * cfg.num_agents
+    out = [BAR]
+    if current > total:
+        out.append("  DRAFT COMPLETE - all picks made")
+        out.append(BAR)
+        out.append(f"  ROSTER  {_slot_status(state.my_roster, cfg)}"
+                   f"   ({len(state.my_roster)}/{cfg.rounds} taken)")
+        gaps = [p for p, n in _unfilled(state.my_roster, cfg).items() if n]
+        if gaps:
+            out.append(f"  WARNING no {', '.join(gaps)} on the roster - add a free agent")
+        out.append(BAR)
+        return "\n".join(out)
+    if roster_full:
+        header = "DRAFT COMPLETE - your roster is full"
+    elif mine_now:
+        header = "YOUR PICK"
+    else:
+        header = f"waiting (seat {state.on_the_clock} on the clock)"
     out.append(f"  {header} - round {rnd}, overall pick {current}")
     out.append(BAR)
 
+    if roster_full:
+        out.append(f"  ROSTER  {_slot_status(state.my_roster, cfg)}"
+                   f"   ({len(state.my_roster)}/{cfg.rounds} taken)")
+        gaps = [p for p, n in _unfilled(state.my_roster, cfg).items() if n]
+        if gaps:
+            out.append(f"  WARNING no {', '.join(gaps)} on the roster - add a free agent")
+        out.append(BAR)
+        return "\n".join(out)
+
     if not recs:
         out.append("  no candidates available")
+        out.append(BAR)
         return "\n".join(out)
 
     out.append(f"  {'#':<3}{'PLAYER':<24}{'POS':<5}{'VALUE':>8}{'ADP':>7}   {'EV':>8}")
@@ -152,8 +189,13 @@ def render(
     else:
         sanity = f"OK - within {abs(delta):.0f} picks of market consensus"
     out.append(f"  SANITY  {sanity}")
-    out.append(f"  WHY     next turn is {gap} picks away"
-               + (f"; {len(upcoming)} picks left" if upcoming else "; last pick"))
+    if mine_now:
+        nxt = [p for p in picks if p > current]
+        wait = f"next turn is pick {nxt[0]} ({nxt[0] - current} away)" if nxt else "this is your final pick"
+    else:
+        nxt = [p for p in picks if p >= current]
+        wait = f"your next pick is {nxt[0]} ({nxt[0] - current} away)" if nxt else "no picks left"
+    out.append(f"  WHY     {wait}; {len(upcoming)} of {cfg.rounds} picks remaining")
     out.append(f"  ROSTER  {_slot_status(state.my_roster, cfg)}"
                f"   ({len(state.my_roster)}/{cfg.rounds} taken)")
     out.append(BAR)
