@@ -468,3 +468,68 @@ class TestAssistedMode(unittest.TestCase):
             client.draft_picks = original
         self.assertEqual(result["additions"], [])
         self.assertEqual(result["conflicts"], [])
+
+
+class TestUnlistedPlayers(unittest.TestCase):
+    """A real draft takes players outside the consensus board in late rounds.
+
+    Dropping them would shorten the claim list, and since a claim's position is
+    its pick number, every later pick would be attributed to the wrong seat.
+    That corrupts whose roster is whose with no visible symptom, so it is
+    guarded explicitly.
+    """
+
+    def setUp(self):
+        self.s = _session()
+        self.s.set_seat(3)
+
+    def _feed(self, ids):
+        from ffopt import client
+        original = client.draft_picks
+        client.draft_picks = lambda _d: [{"player_id": i} for i in ids]
+        return original
+
+    def test_unknown_player_does_not_shift_later_picks(self):
+        from ffopt import client
+        original = self._feed(["1", "NOT_ON_OUR_BOARD", "3", "4"])
+        try:
+            self.s.sync()
+        finally:
+            client.draft_picks = original
+        self.assertEqual(self.s.picks_made, 4)
+        self.assertEqual([p.player_id for p in self.s.my_roster()], ["3"])
+
+    def test_unknown_player_is_visible_to_the_operator(self):
+        from ffopt import client
+        original = self._feed(["1", "NOT_ON_OUR_BOARD"])
+        try:
+            self.s.sync()
+        finally:
+            client.draft_picks = original
+        names = [r["name"] for r in self.s.snapshot()["recent"]]
+        self.assertTrue(any("unlisted" in n for n in names), names)
+
+    def test_snapshot_with_unknown_players_is_serialisable(self):
+        import json
+        from ffopt import client
+        original = self._feed(["1", "MYSTERY", "3"])
+        try:
+            self.s.sync()
+        finally:
+            client.draft_picks = original
+        json.dumps(self.s.snapshot())
+
+    def test_propose_handles_unknown_players(self):
+        from ffopt import client
+        original = self._feed(["1", "MYSTERY"])
+        try:
+            result = self.s.propose()
+        finally:
+            client.draft_picks = original
+        self.assertTrue(result["ok"])
+        self.assertEqual(len(result["additions"]), 2)
+
+    def test_manual_entry_still_rejects_unknown_players(self):
+        """The feed may contain them; the operator must not be able to type one."""
+        with self.assertRaises(session.SessionError):
+            self.s.claim("NOT_ON_OUR_BOARD")

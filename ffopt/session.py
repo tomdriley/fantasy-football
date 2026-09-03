@@ -266,22 +266,21 @@ class DraftSession:
         self.last_sync_error = None
         self.last_sync_at = time.time()
         remote = [
-            str(p.get("player_id")) for p in picks
-            if p.get("player_id") and str(p.get("player_id")) in self._by_id
+            str(p.get("player_id")) for p in picks if p.get("player_id")
         ]
         local = [c.player_id for c in self.claims]
 
         conflicts = [
             {
                 "pick": n + 1,
-                "local": self._brief(self._by_id[local[n]]),
-                "remote": self._brief(self._by_id[remote[n]]),
+                "local": self._brief_or_unknown(local[n]),
+                "remote": self._brief_or_unknown(remote[n]),
             }
             for n in range(min(len(local), len(remote)))
             if local[n] != remote[n]
         ]
         additions = [
-            {"pick": n + 1, **self._brief(self._by_id[pid])}
+            {"pick": n + 1, **self._brief_or_unknown(pid)}
             for n, pid in enumerate(remote)
             if n >= len(local)
         ]
@@ -315,10 +314,16 @@ class DraftSession:
 
         self.last_sync_error = None
         self.last_sync_at = time.time()
+        # Unknown players are kept, not dropped. The board only holds players
+        # with a consensus rank, and a real draft will take players outside it
+        # in late rounds. Dropping them would silently shorten the claim list,
+        # and since a claim's position *is* its pick number, every later pick
+        # would be attributed to the wrong seat -- corrupting whose roster is
+        # whose without any visible symptom.
         remote = [
             Claim(str(p.get("player_id")), "api")
             for p in picks
-            if p.get("player_id") and str(p.get("player_id")) in self._by_id
+            if p.get("player_id")
         ]
         if len(remote) >= len(self.claims):
             self.claims = remote
@@ -397,6 +402,16 @@ class DraftSession:
             brief["ev"] = round(rec.expected_lineup_value, 1)
             out.append(brief)
         return out
+
+    def _brief_or_unknown(self, player_id: str) -> dict:
+        """Describe a claim even when the player is outside our board."""
+        item = self._by_id.get(player_id)
+        if item is not None:
+            return self._brief(item)
+        return {
+            "player_id": player_id, "name": f"(unlisted player {player_id})",
+            "pos": "?", "team": None, "adp": None, "vor": 0.0, "projected": 0.0,
+        }
 
     def _brief(self, item: pool.Item) -> dict:
         return {
@@ -493,9 +508,8 @@ class DraftSession:
                     "pick": n,
                     "seat": self.cfg.seat_of_pick(n),
                     "source": c.source,
-                    **self._brief(self._by_id[c.player_id]),
+                    **self._brief_or_unknown(c.player_id),
                 }
                 for n, c in list(enumerate(self.claims, 1))[-12:]
-                if c.player_id in self._by_id
             ],
         }
