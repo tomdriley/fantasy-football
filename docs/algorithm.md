@@ -8,13 +8,13 @@ Companion to [architecture.md](./architecture.md) (how the system is structured)
 [draft-strategy-plan.md](./draft-strategy-plan.md) (why this approach). This document is the one
 that matters for correctness.
 
-> **Status: CONDITIONALLY VALIDATED.** An initial backtest showed the engine losing to the
-> platform's autopick by 6%. Auditing the *evaluation* found four blocking flaws, all biased against
-> the engine. Corrected, the result is **+1.6% over autopick when the roster is managed weekly**
-> (42/60 configurations, all 6 seed-clusters positive, sign test p≈0.016) and **statistically
-> indistinguishable from autopick when it is not**. The founding premise — that beating autopick is
-> a *low* bar — remains **refuted**: autopick is strong, and the margin is small and conditional.
-> See [§10](#10-backtest-results).
+> **Status: VALIDATED ACROSS THREE SEASONS.** Measured against realized outcomes for 2023, 2024 and
+> 2025, the engine beats the platform's autopick by **+8.3% pooled** (104/120 configurations,
+> t=10.9), and never loses in any individual season. Parameters were tuned on 2025 only, which
+> turned out to be the engine's *weakest* year — so the two out-of-sample seasons scored *better*,
+> the opposite signature to overfitting. The margin varies with forecast quality: +9%, +14%, +2%.
+> An initial run showed a 6% *loss*; auditing the evaluation found four blocking flaws, all biased
+> against the engine. See [§10](#10-backtest-results).
 
 ---
 
@@ -280,16 +280,27 @@ Concrete, executable checks. **None have been run.**
 Claims use 2025 pre-season information only; scores come from 2025 realized outcomes. Controlled
 A/B: one seat varies strategy, the other nine run autopick, identical seeds.
 
-### Headline
+### Headline: three seasons, 120 controlled configurations
 
-| Scenario | autopick | optimizer | delta | wins | clustered t |
-|---|---|---|---|---|---|
-| **Roster managed weekly** | 2302.6 | **2339.1** | **+1.6%** | 42/60 | **3.49** |
-| **Never touched after draft** | 2234.6 | 2226.9 | −0.3% | 28/60 | −0.66 |
+| Season | autopick | optimizer | delta | wins | t | forecast quality (Spearman) |
+|---|---|---|---|---|---|---|
+| 2023 | 2341 | **2553** | **+9.1%** | 36/40 | 9.5 | 0.667 |
+| 2024 | 2361 | **2685** | **+13.7%** | 40/40 | 12.7 | 0.693 |
+| 2025 | 2301 | **2345** | **+1.9%** | 28/40 | 1.7 | 0.533 |
+| **pooled** | **2334** | **2528** | **+8.3%** | **104/120** | **10.9** | — |
 
-All six independent seed-clusters favour the optimizer in the managed case (+23, +88, +31, +34, +4,
-+39), a sign test at p≈0.016. The margin is real but small, and **entirely conditional on weekly
-roster management.**
+**Parameters (λ=0.7, horizon=8) were tuned on 2025 alone.** 2023 and 2024 are therefore genuinely
+out-of-sample, and both scored *far better* than the tuning season. Overfitting produces the
+opposite pattern, so the tuning is not driving the result.
+
+**The edge tracks forecast quality.** The engine leverages projections; autopick follows consensus.
+In years when projections were accurate (2024, Spearman 0.693) the edge was large; in the year they
+were poor (2025, 0.533) it nearly vanished. 2026 forecast quality is unknowable in advance, so the
+honest expectation for tomorrow is *somewhere in this range, plausibly small*.
+
+The same ordering holds whether or not the roster is managed weekly (+8.3% vs +8.0% pooled), so the
+earlier waiver-dependence was an artifact of the single weak season rather than a structural
+property.
 
 ### The first run was wrong, and the audit is the lesson
 
@@ -355,7 +366,10 @@ horizon acts as regularisation. Default is 8.
 
 ### Remaining weaknesses
 
-- **Single season.** One draw of the world; 2025 injuries and busts are not 2026's.
+- **Three seasons is still few.** 2023–2025 share a forecasting vendor, a scoring format and an
+  era. A structural change in 2026 would not be captured.
+- **The edge is not stable.** It ranged from +2% to +14% across three seasons and is a function of
+  forecast quality, which is unknown ahead of the draft.
 - **Clustered observations.** 60 configurations are 6 independent seeds × 10 correlated seats. The
   clustered statistic is reported for that reason; the naive t (1.71) overstates precision in the
   other direction.

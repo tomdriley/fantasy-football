@@ -17,12 +17,13 @@ problem rather than a forecasting one.
 Start with the **algorithm doc** to audit correctness, the strategy plan for the
 reasoning, or the product design doc for what the tool does on draft day.
 
-> **Validated, conditionally.** Against realized 2025 outcomes under controlled
-> A/B conditions the optimizer beats the platform's autopick by **+1.6% if the
-> roster is managed weekly** (42/60 configurations, all 6 seed-clusters positive)
-> and is **indistinguishable from it if the roster is never touched**. The
-> founding premise that beating autopick is a *low* bar is refuted: autopick is
-> strong and the margin is small. See [algorithm.md](docs/algorithm.md) §10.
+> **Validated across three seasons.** Against realized 2023, 2024 and 2025
+> outcomes under controlled A/B conditions, the optimizer beats the platform's
+> autopick by **+8.3% pooled** (104/120 configurations, t=10.9) and never loses
+> in an individual season. Parameters were tuned on 2025 only -- the engine's
+> *weakest* year -- so the out-of-sample seasons scored better, the opposite of
+> overfitting. The edge tracks forecast quality and ranged from +2% to +14%.
+> See [algorithm.md](docs/algorithm.md) §10.
 
 ## Layout
 

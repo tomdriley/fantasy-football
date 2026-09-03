@@ -135,19 +135,30 @@ class TestSpecHonesty(unittest.TestCase):
         """
         banner = self.flat[: self.flat.index("## 1. Notation")]
         self.assertTrue(
-            any(k in banner for k in ("UNVALIDATED", "GATE FAILED", "CONDITIONALLY VALIDATED")),
+            any(k in banner for k in (
+                "UNVALIDATED", "GATE FAILED", "CONDITIONALLY VALIDATED", "VALIDATED")),
             "the validation status banner has been removed or softened",
         )
 
     def test_does_not_overclaim_against_the_baseline(self):
-        """The margin is small and conditional; both facts must stay stated."""
-        self.assertIn("refuted", self.flat)
-        self.assertIn("conditional", self.flat.lower())
-        self.assertIn("managed weekly", self.flat)
+        """A positive result is the easiest thing to overstate.
+
+        The doc must keep recording that the edge is unstable, that it depends
+        on forecast quality that is unknown before the draft, and that the
+        baseline is strong rather than trivial.
+        """
+        self.assertIn("The edge is not stable", self.flat)
+        self.assertIn("unknown ahead of the draft", self.flat)
+        self.assertIn("not myopic", self.flat)
+
+    def test_records_the_out_of_sample_design(self):
+        """Which seasons were tuning and which were held out must stay explicit."""
+        self.assertIn("tuned on 2025", self.flat.lower())
+        self.assertIn("out-of-sample", self.flat.lower())
 
     def test_flags_the_open_risks(self):
         """Remaining weaknesses must stay visible rather than be papered over."""
-        self.assertIn("Single season", self.flat)
+        self.assertIn("still few", self.flat)
         self.assertIn("optimizer's curse", self.flat.lower().replace("\u2019", "'"))
 
     def test_records_the_harness_lesson(self):

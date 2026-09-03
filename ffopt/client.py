@@ -12,6 +12,7 @@ Cache policy is per-endpoint:
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import time
 import urllib.error
@@ -69,10 +70,17 @@ def get(url: str, key: str, ttl: float = DEFAULT_TTL, timeout: float = 30.0) -> 
         raise
     if ttl > 0:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        with open(tmp, "w") as f:
-            json.dump(data, f)
-        tmp.replace(path)
+        # Temp name is process-unique: parallel backtest workers share this cache
+        # directory, and a fixed temp name lets one process rename a file another
+        # is still writing, which surfaced as a FileNotFoundError mid-sweep.
+        tmp = path.with_suffix(f".{os.getpid()}.tmp")
+        try:
+            with open(tmp, "w") as f:
+                json.dump(data, f)
+            os.replace(tmp, path)
+        finally:
+            if tmp.exists():
+                tmp.unlink()
     return data
 
 
