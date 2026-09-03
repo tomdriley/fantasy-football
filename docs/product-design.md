@@ -55,6 +55,26 @@ opponent picks ──> tool updates board ──> tool precomputes our next deci
 The tool runs in a second window beside the draft app. It is a **read-only advisor over a live
 feed** — no login, no credentials, no writes.
 
+## 3a. The web interface
+
+The terminal tool remains, but the primary surface is now a browser interface
+(`scripts/serve.py`). It exists because a timed draft is a poor moment to read
+scrolling terminal output, and because recovery from a mis-entry needs to be a
+click rather than a remembered command.
+
+Three modes, differing only in who controls the board:
+
+| Mode | Feed | Board control |
+|---|---|---|
+| live | polled | applied automatically |
+| assisted | polled | **proposed for acceptance** |
+| manual | not touched | operator only |
+
+Assisted mode is the interesting one. A feed that lags the room, or disagrees
+with it, would otherwise silently overwrite a board the operator has been
+maintaining by hand. Instead it surfaces the difference -- "the feed has 3 picks
+you do not", or "you have X at pick 24, the feed says Y" -- and waits.
+
 ## 4. The primary screen
 
 Designed for a 20-second read under stress:

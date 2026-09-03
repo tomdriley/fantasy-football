@@ -257,10 +257,41 @@ async function refreshAdvice(force) {
 }
 
 async function doSync() {
-  if (App.state && App.state.mode === 'manual') return;
+  if (!App.state || App.state.mode === 'manual') return;
+
+  // Assisted mode proposes rather than applies: the operator keeps control of a
+  // board they may have been maintaining by hand, and a lagging or wrong feed
+  // cannot silently overwrite it.
+  if (App.state.mode === 'assisted') return proposeFromFeed();
+
   const r = await post('/api/sync');
   if (r.body && r.body.state) renderState(r.body.state);
   if (r.body && r.body.ok === false) setConn('offline', 'offline — using local board');
+  return r;
+}
+
+async function proposeFromFeed() {
+  const r = await api('/api/propose');
+  const body = (r.body) || {};
+  if (body.state) renderState(body.state);
+  if (body.ok === false) { setConn('offline', 'offline — using local board'); return r; }
+
+  const box = $('proposal');
+  const adds = body.additions || [];
+  const conflicts = body.conflicts || [];
+  if (!adds.length && !conflicts.length) { box.classList.add('hidden'); return r; }
+
+  const names = adds.slice(0, 6).map((a) => `${a.pick}. ${escapeHtml(a.name)}`).join(', ');
+  let html = adds.length
+    ? `The feed has <b>${adds.length}</b> pick(s) you do not: ${names}${adds.length > 6 ? '…' : ''}`
+    : '';
+  if (conflicts.length) {
+    const c = conflicts[0];
+    html += `<div class="conflict">Disagreement at pick ${c.pick}: ` +
+      `you have ${escapeHtml(c.local.name)}, the feed says ${escapeHtml(c.remote.name)}.</div>`;
+  }
+  $('proposalText').innerHTML = html;
+  box.classList.remove('hidden');
   return r;
 }
 
@@ -418,6 +449,13 @@ function bind() {
     if (r.body && r.body.state) renderState(r.body.state);
     refreshAdvice(true);
   };
+  $('acceptProposal').onclick = async () => {
+    const r = await post('/api/sync');
+    if (r.body && r.body.state) renderState(r.body.state);
+    $('proposal').classList.add('hidden');
+    refreshAdvice(true);
+  };
+  $('dismissProposal').onclick = () => $('proposal').classList.add('hidden');
   $('fixCancel').onclick = closeFix;
   $('fixApply').onclick = () => fixSearch($('fixQuery').value);
   $('fixRemove').onclick = removeFix;

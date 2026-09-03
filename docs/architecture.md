@@ -14,6 +14,7 @@ built**.
 | Forecasts come from one vendor | Valuation and decision layers are separated so the forecast can be swapped or blended |
 | Operator cannot evaluate football claims | Domain guardrails are encoded as hard constraints, not left to judgement (see [product-design.md](./product-design.md)) |
 | No scientific Python available | Pure standard library plus `pyyaml`. Zero install risk on draft day |
+| No web framework available | The interface is a dozen JSON endpoints over an existing engine, so `http.server` plus vanilla JS is sufficient and adds no install risk hours before a one-shot event |
 
 ## 2. Layering
 

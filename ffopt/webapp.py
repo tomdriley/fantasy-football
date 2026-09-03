@@ -138,6 +138,10 @@ class DraftService:
             self.invalidate()
             return {**result, "state": self.session.snapshot()}
 
+    def propose(self) -> dict:
+        with self._lock:
+            return {**self.session.propose(), "state": self.session.snapshot()}
+
 
 def make_handler(service: DraftService) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
@@ -197,6 +201,8 @@ def make_handler(service: DraftService) -> type[BaseHTTPRequestHandler]:
                         return self._json(service.recommend(max(1, min(trials, 200))))
                     if route == "/api/panic":
                         return self._json(service.panic())
+                    if route == "/api/propose":
+                        return self._json(service.propose())
                     if route == "/api/search":
                         return self._json(service.search((query.get("q") or [""])[0]))
                     return self._json({"error": "unknown endpoint"}, 404)

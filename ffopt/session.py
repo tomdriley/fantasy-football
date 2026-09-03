@@ -247,6 +247,58 @@ class DraftSession:
             raise SessionError(f"pick must be 1..{self.picks_made}")
 
     # -- syncing --------------------------------------------------------
+    def propose(self) -> dict:
+        """What the feed knows that we do not, *without* applying it.
+
+        This is what separates assisted mode from live mode. In live mode the
+        feed is applied automatically. In assisted mode the operator stays in
+        control: the feed is a source of suggestions to accept, so a feed that
+        is wrong, lagging, or disagreeing with the room cannot silently rewrite
+        a board the operator has been maintaining by hand.
+        """
+        try:
+            picks = client.draft_picks(self.cfg.draft_id)
+        except Exception as exc:  # noqa: BLE001
+            self.last_sync_error = str(exc)
+            self.save()
+            return {"ok": False, "error": str(exc), "additions": [], "conflicts": []}
+
+        self.last_sync_error = None
+        self.last_sync_at = time.time()
+        remote = [
+            str(p.get("player_id")) for p in picks
+            if p.get("player_id") and str(p.get("player_id")) in self._by_id
+        ]
+        local = [c.player_id for c in self.claims]
+
+        conflicts = [
+            {
+                "pick": n + 1,
+                "local": self._brief(self._by_id[local[n]]),
+                "remote": self._brief(self._by_id[remote[n]]),
+            }
+            for n in range(min(len(local), len(remote)))
+            if local[n] != remote[n]
+        ]
+        additions = [
+            {"pick": n + 1, **self._brief(self._by_id[pid])}
+            for n, pid in enumerate(remote)
+            if n >= len(local)
+        ]
+        self.save()
+        return {
+            "ok": True,
+            "additions": additions,
+            "conflicts": conflicts,
+            "remote_total": len(remote),
+            "local_total": len(local),
+        }
+
+    def accept_proposal(self) -> int:
+        """Adopt the feed's view of the board wholesale."""
+        result = self.sync()
+        return self.picks_made if result.get("ok") else -1
+
     def sync(self) -> dict:
         """Pull claims from the platform feed.
 
@@ -435,6 +487,7 @@ class DraftSession:
             "last_sync_error": self.last_sync_error,
             "last_sync_at": self.last_sync_at,
             "board_size": len(self._board),
+            "assisted": self.mode == "assisted",
             "recent": [
                 {
                     "pick": n,

@@ -396,3 +396,75 @@ class TestSearch(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestAssistedMode(unittest.TestCase):
+    """Assisted mode proposes; it must never silently overwrite the operator."""
+
+    def setUp(self):
+        self.s = _session()
+        self.s.set_mode("assisted")
+
+    def _feed(self, ids):
+        from ffopt import client
+        original = client.draft_picks
+        client.draft_picks = lambda _d: [{"player_id": i} for i in ids]
+        return original
+
+    def test_propose_reports_additions_without_applying(self):
+        from ffopt import client
+        original = self._feed(["1", "2", "3"])
+        try:
+            result = self.s.propose()
+        finally:
+            client.draft_picks = original
+        self.assertTrue(result["ok"])
+        self.assertEqual(len(result["additions"]), 3)
+        self.assertEqual(self.s.picks_made, 0, "propose must not mutate the board")
+
+    def test_propose_detects_a_disagreement(self):
+        from ffopt import client
+        self.s.claim("5")
+        original = self._feed(["1"])
+        try:
+            result = self.s.propose()
+        finally:
+            client.draft_picks = original
+        self.assertEqual(len(result["conflicts"]), 1)
+        self.assertEqual(result["conflicts"][0]["pick"], 1)
+        self.assertEqual(self.s.claims[0].player_id, "5", "local entry must survive")
+
+    def test_accepting_a_proposal_applies_it(self):
+        from ffopt import client
+        original = self._feed(["1", "2"])
+        try:
+            self.s.propose()
+            self.assertEqual(self.s.picks_made, 0)
+            self.s.accept_proposal()
+        finally:
+            client.draft_picks = original
+        self.assertEqual(self.s.picks_made, 2)
+
+    def test_propose_survives_a_dead_feed(self):
+        from ffopt import client
+        self.s.claim("1")
+        original = client.draft_picks
+        client.draft_picks = lambda _d: (_ for _ in ()).throw(OSError("down"))
+        try:
+            result = self.s.propose()
+        finally:
+            client.draft_picks = original
+        self.assertFalse(result["ok"])
+        self.assertEqual(self.s.picks_made, 1)
+
+    def test_no_proposal_when_already_in_sync(self):
+        from ffopt import client
+        self.s.claim("1")
+        self.s.claim("2")
+        original = self._feed(["1", "2"])
+        try:
+            result = self.s.propose()
+        finally:
+            client.draft_picks = original
+        self.assertEqual(result["additions"], [])
+        self.assertEqual(result["conflicts"], [])

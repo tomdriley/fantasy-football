@@ -52,13 +52,40 @@ correctness go to the algorithm doc; for draft-day mechanics, the product design
 Requires Python 3 with `pyyaml`. No other dependencies.
 
 ```sh
-python3 -m unittest discover -s tests -v      # 57 tests, ~1s
+python3 scripts/serve.py                      # web interface (recommended)
+python3 scripts/serve.py --offline            # start in manual mode, no network
 
-python3 scripts/make_sheet.py                 # printable draft sheet
-python3 scripts/draft.py --seat 5 --once      # one live recommendation
-python3 scripts/draft.py                      # poll continuously during the draft
-python3 scripts/draft.py --manual --seat 5    # enter opponents' picks by hand
+python3 scripts/make_sheet.py                 # printable draft sheet (paper backup)
+python3 scripts/draft.py                      # terminal advisor
+python3 scripts/draft.py --manual --seat 5    # terminal, enter picks by hand
+
+python3 -m unittest discover -s tests         # ~200 tests, ~7s
+FFOPT_GOLDEN=1 python3 -m unittest discover -s tests   # + engine regression (~70s)
 ```
+
+### The web interface
+
+`scripts/serve.py` opens a browser interface at `http://127.0.0.1:8777`. It has
+three modes:
+
+| Mode | Behaviour |
+|---|---|
+| **live** | Polls the league API and applies picks automatically |
+| **assisted** | Polls, but *proposes* changes for you to accept, so a lagging or wrong feed cannot overwrite a board you are maintaining |
+| **manual** | You type every pick; the network is never touched |
+
+All three work offline. If the feed fails the interface says so and keeps
+advising from the local board. Picks are persisted server-side, so refreshing or
+closing the browser loses nothing.
+
+**Recovery:** any recorded pick can be corrected, removed, or inserted. Insert
+matters most — a single missed entry misattributes every later pick to the wrong
+seat, and inserting the missing one repairs the whole board.
+
+**Panic button:** returns a defensible pick in under a millisecond with no
+simulation and no network, for when the clock is nearly out or the board looks
+wrong. It offers several options because a panic usually means the board is
+already inaccurate.
 
 If the pick feed fails three times in a row the tool switches to manual entry on
 its own, keeping the picks it already has. In manual mode type a surname as each

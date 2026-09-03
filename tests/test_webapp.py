@@ -351,3 +351,29 @@ class TestSyncDegradation(WebTestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestProposeEndpoint(WebTestCase):
+    def test_propose_does_not_mutate(self):
+        from ffopt import client
+        original = client.draft_picks
+        client.draft_picks = lambda _d: [{"player_id": "1"}, {"player_id": "2"}]
+        try:
+            status, body = self.get("/api/propose")
+        finally:
+            client.draft_picks = original
+        self.assertEqual(status, 200)
+        self.assertEqual(len(body["additions"]), 2)
+        self.assertEqual(body["state"]["picks_made"], 0)
+
+    def test_propose_handles_a_dead_feed(self):
+        from ffopt import client
+        original = client.draft_picks
+        client.draft_picks = lambda _d: (_ for _ in ()).throw(OSError("down"))
+        try:
+            status, body = self.get("/api/propose")
+        finally:
+            client.draft_picks = original
+        self.assertEqual(status, 200)
+        self.assertFalse(body["ok"])
+        self.assertIn("state", body)
