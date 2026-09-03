@@ -479,6 +479,51 @@ The replacement levels it never computes are what drive every one of those swaps
 | DEF | 113 | 98 | 16 |
 | K | 76 | 73 | **4** |
 
+### The live feed is CDN-cached (measured 2026-09-03, draft day)
+
+Everything up to this point tested the polling path against a mock server, which proves the client
+parses the schema but says nothing about the real endpoint. The vendor documentation describes the
+endpoint's shape and is silent on liveness and caching. Inspecting response headers directly:
+
+    cache-control: public, s-maxage=30, stale-while-revalidate=300
+    cf-cache-status: HIT
+    age: 26
+
+An A/B against the live endpoint, 8 polls each one second apart:
+
+| Polling | Cache HIT | MISS | Worst staleness |
+|---|---|---|---|
+| plain URL | 8/8 | 0 | **18 s** |
+| unique query parameter | 0 | 8/8 | **0 s** |
+
+On a 60-second pick timer, 18 seconds is nearly a third of a pick of lag arriving *before any of our
+code runs*, and `stale-while-revalidate=300` permits up to five minutes. The fix is a distinct cache
+key per request; the cost is origin traffic, and polling at 1.5-5 s is 12-40 requests per minute
+against a documented budget of 1000.
+
+**Resolved by direct measurement.** A throwaway league was created and drafted 25 minutes before
+the real event, with `scripts/probe_feed.py` polling the feed once a second:
+
+    pick  gap    rtt    cache  age  player
+       1    -    0.22s  MISS    -   Jahmyr Gibbs (RB)
+       2  1.2s   0.18s  MISS    -   Bijan Robinson (RB)
+       3  1.2s   0.19s  MISS    -   Puka Nacua (WR)
+       4  1.2s   0.18s  MISS    -   Jonathan Taylor (RB)
+
+One new pick per poll, each arriving individually rather than in a batch, every response served from
+origin with no staleness. **The feed publishes picks as they happen**, so assisted mode is viable.
+
+Two caveats the measurement does not cover. The observed picks were bot autopicks, which may be
+written by a different path than a human's click. And 24 picks is a small sample. Manual entry
+remains the default for the real draft because it depends on none of this; the value of the result
+is that assisted mode is now a justified fallback rather than a hopeful one.
+
+A bug in the probe is worth recording, because it produced a confident wrong answer: a later run
+started against a board that already held 24 picks, saw them all in its first poll, recorded 23 gaps
+of 0.0s and reported "picks arrived in batches -- consistent with a feed written behind the room."
+It was measuring its own start time. Backlog is now counted and excluded, and fewer than three
+timed arrivals reports inconclusive rather than guessing.
+
 ### Adversarial checks
 
 | Test | Result | What it rules out |
