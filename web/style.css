@@ -69,6 +69,8 @@ h2:first-child { margin-top: 0; }
   background: var(--panel-2); border: 1px solid var(--line);
 }
 .picks li.top { border-color: var(--accent-dim); background: #12241a; }
+.picks li.weak { opacity: .72; }
+.picks .flag { display: block; font-size: 11px; color: var(--warn); margin-top: 2px; }
 .picks .rank { color: var(--dim); font-variant-numeric: tabular-nums; }
 .picks .name { font-weight: 600; font-size: 17px; }
 .picks .pos { color: var(--dim); font-size: 13px; }
@@ -79,6 +81,9 @@ h2:first-child { margin-top: 0; }
 }
 .picks .take:hover { filter: brightness(1.1); }
 .picks li:not(.top) .take { background: var(--panel); color: var(--text); border: 1px solid var(--line); }
+
+.picks.stale { opacity: .45; pointer-events: none; }
+.picks button:disabled { cursor: not-allowed; }
 
 .meta { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 .tag { font-size: 12px; color: var(--dim); background: var(--panel-2);

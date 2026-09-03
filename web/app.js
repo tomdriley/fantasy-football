@@ -81,7 +81,8 @@ function renderState(s) {
   const gap = s.picks_until_my_turn;
   $('why').textContent = s.complete
     ? 'roster full'
-    : gap === null ? 'no picks left'
+    : s.seat == null ? 'set your seat above to see when you pick'
+    : gap === null ? 'you have no picks left'
     : gap === 0 ? 'you are on the clock'
     : `your next pick is ${s.next_pick_number} (${gap} away)`;
 
@@ -156,19 +157,35 @@ function renderRecent(s) {
   });
 }
 
+function setPicksStale(stale) {
+  const el = $('picks');
+  el.classList.toggle('stale', !!stale);
+  el.querySelectorAll('button').forEach((b) => { b.disabled = !!stale; });
+}
+
 function renderPicks(list, opts = {}) {
   const el = $('picks');
+  el.classList.remove('stale');
   el.innerHTML = '';
   if (!list || !list.length) {
     el.innerHTML = '<li class="hint">no candidates</li>';
     return;
   }
+  // Alternatives are frequently near-tied on expected value while differing
+  // enormously in scarcity. The engine's top choice is stable across seeds, but
+  // the runners-up are noise, and a player with far lower value-over-
+  // replacement sitting at rank two is the classic trap this project exists to
+  // avoid. Flag it rather than hide it: the operator cannot judge it unaided.
+  const topVor = list[0].vor || 0;
   list.forEach((p, i) => {
     const li = document.createElement('li');
-    if (i === 0) li.className = 'top';
+    const weak = i > 0 && topVor > 0 && p.vor < 0.6 * topVor;
+    li.className = (i === 0 ? 'top' : '') + (weak ? ' weak' : '');
     li.innerHTML =
       `<span class="rank">${i + 1}</span>` +
-      `<span><span class="name">${escapeHtml(p.name)}</span></span>` +
+      `<span><span class="name">${escapeHtml(p.name)}</span>` +
+      (weak ? '<span class="flag">low value — much easier to replace later</span>' : '') +
+      `</span>` +
       `<span class="pos">${p.pos}</span>` +
       `<span class="num">value ${p.vor}</span>` +
       `<span class="num">adp ${p.adp ?? '—'}</span>`;
@@ -225,6 +242,7 @@ async function refreshAdvice(force) {
   const now = Date.now();
   if (!force && now - App.lastAdvice < 1500) return;
   App.lastAdvice = now;
+  setPicksStale(true);
   status('thinking…');
   const r = await api('/api/recommend', {}, 30000);
   if (r.ok && r.body.picks) {
@@ -249,10 +267,12 @@ async function doSync() {
 async function claimById(playerId) {
   if (App.busy) return;
   App.busy = true;
+  setPicksStale(true);
   const r = await post('/api/claim', { player_id: playerId });
   App.busy = false;
   if (r.body && r.body.state) renderState(r.body.state);
   if (r.body && r.body.ok === false) {
+    setPicksStale(false);
     entryMsg(r.body.error || 'could not record that pick', true);
   } else {
     entryMsg('recorded ' + (r.body.item ? r.body.item.name : ''), false);
@@ -275,7 +295,7 @@ async function claimByQuery(q) {
     box.innerHTML = '';
     (r.body.results || []).forEach((p) => {
       const b = document.createElement('button');
-      b.innerHTML = `${escapeHtml(p.name)}<span class="s-pos">${p.pos} · adp ${p.adp ?? '—'}</span>`;
+      b.innerHTML = `${escapeHtml(p.name)} <span class="s-pos">${p.pos} · adp ${p.adp ?? '—'}</span>`;
       b.onclick = () => claimById(p.player_id);
       box.appendChild(b);
     });
@@ -340,7 +360,7 @@ async function fixSearch(q) {
   box.innerHTML = '';
   ((r.body && r.body.results) || []).forEach((p) => {
     const b = document.createElement('button');
-    b.innerHTML = `${escapeHtml(p.name)}<span class="s-pos">${p.pos} · adp ${p.adp ?? '—'}</span>`;
+    b.innerHTML = `${escapeHtml(p.name)} <span class="s-pos">${p.pos} · adp ${p.adp ?? '—'}</span>`;
     b.onclick = () => applyFix(p.player_id);
     box.appendChild(b);
   });
