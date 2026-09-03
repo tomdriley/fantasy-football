@@ -1,0 +1,141 @@
+"""Conformance tests binding docs/algorithm.md to the implementation.
+
+An audit document that has drifted from the code is worse than no document: it
+invites review effort to be spent on a system that does not exist. These tests
+pin the quantitative claims in the algorithm spec so that changing the code
+without updating the doc fails the suite.
+
+Each test names the section of docs/algorithm.md it enforces.
+"""
+
+from __future__ import annotations
+
+import pathlib
+import unittest
+
+from ffopt import client, config, optimizer, pool, season
+
+DOC = pathlib.Path(__file__).resolve().parent.parent / "docs" / "algorithm.md"
+
+
+class TestSpecConstants(unittest.TestCase):
+    """docs/algorithm.md sections 1, 2.2, 2.3 and 5."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.cfg = config.load()
+
+    def test_calendar_constants(self):
+        self.assertEqual(season.WEEKS, 18)
+        self.assertEqual(season.BYE_WEEKS, 1)
+
+    def test_league_structure_matches_spec(self):
+        self.assertEqual(self.cfg.flex_slots, 2)
+        self.assertEqual(set(self.cfg.flex_types), {"RB", "WR", "TE"})
+
+    def test_waiver_threshold_equals_total_picks(self):
+        """Spec section 5: threshold = rounds x agents, exactly."""
+        self.assertEqual(
+            season.WAIVER_THRESHOLD, self.cfg.rounds * self.cfg.num_agents
+        )
+
+    def test_accessible_slots_formula(self):
+        """Spec section 2.3: a(tau) = d(tau) + F if flex-eligible."""
+        for position, expected in (
+            ("RB", 4), ("WR", 4), ("TE", 3), ("QB", 1), ("K", 1), ("DEF", 1)
+        ):
+            self.assertEqual(
+                season.accessible_slots(position, self.cfg), expected, position
+            )
+
+    def test_unavailability_includes_bye(self):
+        """Spec section 2.2: q(tau) = (GAMES_MISSED + 1) / W."""
+        self.assertAlmostEqual(season.unavailability("DEF"), 1 / 18)
+        self.assertAlmostEqual(season.unavailability("QB"), (3.4 + 1) / 18)
+
+    def test_games_missed_covers_every_type(self):
+        self.assertEqual(
+            set(season.GAMES_MISSED), {"QB", "RB", "WR", "TE", "K", "DEF"}
+        )
+
+    def test_documented_rates_match_code(self):
+        """The rate table in the spec must equal the constants in the code."""
+        text = DOC.read_text()
+        self.assertIn("QB 3.4, RB 2.4, WR 3.0, TE 2.6, K 1.8, DEF 0.0", text)
+        for position, value in (
+            ("QB", 3.4), ("RB", 2.4), ("WR", 3.0), ("TE", 2.6), ("K", 1.8), ("DEF", 0.0)
+        ):
+            self.assertAlmostEqual(season.GAMES_MISSED[position], value, msg=position)
+
+
+class TestSpecBehaviour(unittest.TestCase):
+    """docs/algorithm.md sections 2.4, 3.2 and 7."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.cfg = config.load()
+        items = pool.build(client.projections(cls.cfg.season), cls.cfg.scoring_weights)
+        cls.groups = pool.by_position(items)
+        cls.waivers = season.waiver_baselines(items, cls.cfg)
+
+    def test_bench_value_capped_at_surplus_over_free_agent(self):
+        """Spec 2.4 term (c): a backup at a 1-slot, deep type is worth ~nothing."""
+        gain = season.marginal_season_value(
+            [self.groups["DEF"][0]], self.groups["DEF"][1], self.cfg, self.waivers
+        )
+        self.assertLess(gain, 5.0)
+
+    def test_depth_at_multi_slot_type_beats_depth_at_single_slot_type(self):
+        """Spec 2.4: the product of both factors is what drives behaviour."""
+        roster = self.groups["RB"][:3] + self.groups["WR"][:3]
+        spare_rb = season.marginal_season_value(
+            roster, self.groups["RB"][3], self.cfg, self.waivers
+        )
+        backup_def = season.marginal_season_value(
+            roster + [self.groups["DEF"][0]],
+            self.groups["DEF"][1], self.cfg, self.waivers,
+        )
+        self.assertGreater(spare_rb, backup_def)
+
+    def test_feasibility_constraint_is_load_bearing(self):
+        """Spec 3.2: fires only when picks remaining <= mandatory slots left."""
+        roster = self.groups["WR"][:14]
+        required = optimizer.mandatory_filter(roster, self.cfg, 1)
+        self.assertIsNotNone(required)
+        self.assertIn("K", required)
+        self.assertIsNone(optimizer.mandatory_filter(roster, self.cfg, 10))
+
+    def test_feasibility_constraint_silent_on_empty_roster_early(self):
+        self.assertIsNone(optimizer.mandatory_filter([], self.cfg, 15))
+
+    def test_unfilled_slot_count_is_correct(self):
+        roster = self.groups["WR"][:3]
+        missing = optimizer.unfilled_slots(roster, self.cfg)
+        self.assertNotIn("WR", missing)
+        self.assertEqual(missing.get("K"), 1)
+        self.assertEqual(missing.get("RB"), 2)
+
+
+class TestSpecHonesty(unittest.TestCase):
+    """The spec must keep disclosing its own weak points."""
+
+    def setUp(self):
+        self.text = DOC.read_text()
+
+    def test_declares_unvalidated_status(self):
+        """Until the backtest runs, the doc must say so prominently."""
+        self.assertIn("UNVALIDATED", self.text)
+
+    def test_names_the_weakest_parameter(self):
+        self.assertIn("Waiver contention rank", self.text)
+
+    def test_records_the_adp_std_trap(self):
+        self.assertIn("not a standard deviation", self.text)
+
+    def test_keeps_the_trivial_heuristic_baseline(self):
+        """The most likely way this project fails must stay documented."""
+        self.assertIn("trivial heuristic", self.text)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

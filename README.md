@@ -7,14 +7,19 @@ problem rather than a forecasting one.
 
 | Document | Question it answers |
 |---|---|
+| [Algorithm](docs/algorithm.md) | **The objective function and decision rule, as equations.** Written to be audited: every parameter's source, every approximation ranked by how much it is distrusted |
 | [Strategy plan](docs/draft-strategy-plan.md) | **Why** this approach, and why not machine-learned projections |
 | [League rules](docs/league-rules.md) | **What** the rules are, in plain language, assuming no football knowledge |
 | [Architecture](docs/architecture.md) | **How** the system is built: layering, budgets, failure modes |
 | [Product design](docs/product-design.md) | **What the operator experiences** during a timed live draft |
 | [league-rules.yaml](docs/league-rules.yaml) | Machine-readable rules. Source of truth for all code |
 
-Start with the strategy plan for the reasoning, or the product design doc for
-what the tool actually does on draft day.
+Start with the **algorithm doc** to audit correctness, the strategy plan for the
+reasoning, or the product design doc for what the tool does on draft day.
+
+> The engine is **not yet validated**. No backtest against realized outcomes has
+> been run, so it is not known to beat a trivial heuristic. See
+> [algorithm.md](docs/algorithm.md) section 9.
 
 ## Layout
 
@@ -27,6 +32,9 @@ what the tool actually does on draft day.
 | `ffopt/scoring.py` | The linear payoff function |
 | `ffopt/pool.py` | Item pool construction |
 | `ffopt/valuation.py` | Replacement baselines, value over replacement, tiers |
+| `ffopt/season.py` | The objective: expected season value, including bench slots |
+| `ffopt/availability.py` | Opponent model |
+| `ffopt/optimizer.py` | Rollout decision rule and feasibility constraints |
 
 ## Running
 
