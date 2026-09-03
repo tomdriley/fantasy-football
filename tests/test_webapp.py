@@ -564,3 +564,54 @@ class TestSetupEndpoints(WebTestCase):
         _, seated = self.get("/api/recommend?trials=1")
         self.assertFalse(seated["degraded"])
         self.assertFalse(seated["cached"])
+
+
+class TestFastEntryEndpoints(WebTestCase):
+    """The click-to-record path, over HTTP."""
+
+    def setUp(self):
+        super().setUp()
+        self.post("/api/start", {"seat": 3, "mode": "manual"})
+
+    def test_suggest_returns_alternatives(self):
+        _, body = self.get("/api/suggest?q=ashford&limit=8")
+        self.assertGreater(len(body["results"]), 1)
+
+    def test_suggest_caps_the_limit(self):
+        _, body = self.get("/api/suggest?q=a&limit=999")
+        self.assertLessEqual(len(body["results"]), 25)
+
+    def test_suggest_handles_an_empty_query(self):
+        code, body = self.get("/api/suggest?q=")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["results"], [])
+
+    def test_state_carries_the_quick_grid(self):
+        _, body = self.get("/api/state")
+        self.assertTrue(body["quick"])
+        self.assertIn("player_id", body["quick"][0])
+
+    def test_a_burst_of_eighteen_picks_stays_consistent(self):
+        """The worst realistic gap between two of our own turns."""
+        _, state = self.get("/api/state")
+        seen = []
+        for _ in range(18):
+            pid = state["quick"][0]["player_id"]
+            self.assertNotIn(pid, seen, "a claimed player was offered again")
+            _, body = self.post("/api/claim", {"player_id": pid})
+            self.assertTrue(body["ok"])
+            seen.append(pid)
+            state = body["state"]
+        self.assertEqual(state["picks_made"], 18)
+        self.assertEqual(len(set(seen)), 18)
+
+    def test_claiming_the_same_player_twice_is_refused_clearly(self):
+        """A double click must not silently record two picks."""
+        _, state = self.get("/api/state")
+        pid = state["quick"][0]["player_id"]
+        _, first = self.post("/api/claim", {"player_id": pid})
+        self.assertTrue(first["ok"])
+        code, second = self.post("/api/claim", {"player_id": pid})
+        self.assertFalse(second["ok"])
+        self.assertIn("already claimed", second["error"])
+        self.assertEqual(second["state"]["picks_made"], 1)

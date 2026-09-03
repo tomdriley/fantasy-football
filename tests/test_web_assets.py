@@ -86,13 +86,45 @@ class TestSafetyAffordances(unittest.TestCase):
         self.assertIn("timeoutMs", JS)
 
     def test_user_content_is_escaped(self):
-        """Player names reach innerHTML; they must be escaped."""
+        """Player names reach innerHTML; they must all be escaped.
+
+        Checks the invariant rather than one spelling of it: every template
+        interpolation that mentions a name-bearing field has to be wrapped in
+        escapeHtml. An earlier version asserted a single literal call, which
+        silently stopped covering anything the moment the call was renamed.
+        """
         self.assertIn("function escapeHtml", JS)
-        self.assertIn("escapeHtml(p.name)", JS)
+
+        # ${ ... } interpolations referencing a name field.
+        interps = re.findall(r"\$\{([^}]*(?:\.name|\.short|disp\()[^}]*)\}", JS)
+        self.assertGreater(len(interps), 4, "expected several name interpolations")
+        unescaped = [x for x in interps if "escapeHtml" not in x]
+        self.assertEqual(unescaped, [], f"unescaped name interpolations: {unescaped}")
 
     def test_keyboard_shortcuts_documented_in_the_page(self):
         self.assertIn("P = panic", HTML)
         self.assertIn("U = undo", HTML)
+
+    def test_recording_a_pick_is_click_first(self):
+        """A mock draft was lost typing entries during an opponent burst.
+
+        Every path that commits a pick must be a click on a name the operator
+        can see. Submitting a raw query and letting the server resolve it
+        out of sight is what recorded the wrong player.
+        """
+        self.assertIn('id="quick"', HTML)
+        self.assertIn("renderQuick", JS)
+        self.assertNotIn("claimByQuery", JS)
+        self.assertIn("/api/suggest", JS)
+
+    def test_typing_searches_as_you_go(self):
+        """The box must show matches live, not only on submit."""
+        self.assertIn("onQueryInput", JS)
+        self.assertIn("'input'", JS)
+
+    def test_names_render_in_the_platforms_format(self):
+        """Short names are what makes this screen match the draft room."""
+        self.assertIn("p.short", JS)
 
     def test_modes_offered_match_the_backend(self):
         from ffopt import session

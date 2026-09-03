@@ -51,15 +51,22 @@
   </section>
 
   <section class="card">
-    <h2>Enter a pick</h2>
-    <p class="hint">Type a surname as each pick happens. Works offline.</p>
+    <h2>Record a pick</h2>
+    <p class="hint">Click the player who was just taken. Type only if they are
+       not shown below.</p>
+
     <div class="entry">
       <input id="q" type="text" autocomplete="off" spellcheck="false"
-             placeholder="e.g. gibbs" aria-label="player name">
-      <button id="add" class="primary">Add</button>
+             placeholder="type a surname to search…" aria-label="player name">
+      <button id="clearQ" class="ghost small">Clear</button>
     </div>
     <div id="suggest" class="suggest"></div>
     <div id="entryMsg" class="msg"></div>
+
+    <div id="quickWrap">
+      <h3 class="quick-title">Most likely next <span class="hint">— one click records it</span></h3>
+      <div id="quick" class="quick"></div>
+    </div>
 
     <div id="proposal" class="proposal hidden">
       <div id="proposalText"></div>
@@ -150,7 +157,7 @@
 
 <footer>
   <span id="status">starting…</span>
-  <span class="hint">Enter = add · P = panic · U = undo · M = manual</span>
+  <span class="hint">Click a player to record · P = panic · U = undo · M = manual</span>
 </footer>
 
 <script src="/app.js"></script>

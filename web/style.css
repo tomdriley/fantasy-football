@@ -218,3 +218,27 @@ footer { display: flex; justify-content: space-between; padding: 10px 18px;
 }
 .manual-btn:hover { filter: brightness(1.1); }
 .small { padding: .3rem .55rem; font-size: .78rem; }
+
+/* ---------- click-to-record ---------- */
+/* Sized for a fast, accurate mouse click under time pressure rather than for
+   density: an opponent burst can need a dozen entries inside one pick timer. */
+.quick-title {
+  margin: 14px 0 6px; font-size: .82rem; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--dim); font-weight: 600;
+}
+.quick { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; }
+.quick-btn, .sug-btn {
+  display: flex; flex-direction: column; gap: 1px; text-align: left;
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+  border-radius: 6px; padding: 9px 11px; cursor: pointer; font: inherit;
+  min-height: 44px; justify-content: center;
+}
+.quick-btn:hover, .sug-btn:hover {
+  border-color: var(--accent); background: rgba(74, 222, 128, .10);
+}
+.quick-btn:active, .sug-btn:active { transform: translateY(1px); }
+.p-name { font-weight: 600; font-size: .92rem; line-height: 1.2; }
+.p-meta { color: var(--dim); font-size: .74rem; }
+.sug-btn { border-color: var(--blue); }
+.sug-btn:hover { border-color: var(--accent); }
+.suggest { margin-top: 8px; }

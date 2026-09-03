@@ -18,6 +18,9 @@ const App = {
   fixPick: null,
   lastAdvice: 0,
   setupSeat: null,
+  searchTimer: null,
+  adviceTimer: null,
+  lastQuery: null,
 };
 
 /* ---------- transport ---------- */
@@ -113,6 +116,58 @@ async function goManual() {
   status('manual');
 }
 
+/* ---------- recording picks ---------- */
+
+/* Recording an opponent's pick is the time-critical path: between two of our
+ * own turns up to eighteen picks can land, and nine autopicking opponents take
+ * only seconds. So the design is click-first -- the likely players are already
+ * on screen, and typing narrows a visible list rather than submitting a guess
+ * the server resolves out of sight. */
+
+/* Names are shown as the platform shows them -- "J. Gibbs" -- so matching this
+ * screen against the draft room is a glance rather than a read. The server
+ * falls back to the full name where an abbreviation would be ambiguous. */
+const disp = (p) => p.short || p.name || '';
+
+function pickButton(p, cls) {
+  const b = document.createElement('button');
+  b.className = cls;
+  b.innerHTML =
+    `<span class="p-name">${escapeHtml(disp(p))}</span>` +
+    `<span class="p-meta">${p.pos}${p.team ? ' · ' + escapeHtml(p.team) : ''}` +
+    `${p.adp != null ? ' · adp ' + p.adp : ''}</span>`;
+  b.onclick = () => claimById(p.player_id);
+  return b;
+}
+
+function renderQuick(s) {
+  const box = $('quick');
+  box.innerHTML = '';
+  (s.quick || []).forEach((p) => box.appendChild(pickButton(p, 'quick-btn')));
+}
+
+function renderSuggestions(results) {
+  const box = $('suggest');
+  box.innerHTML = '';
+  if (!results.length) return;
+  results.forEach((p) => box.appendChild(pickButton(p, 'sug-btn')));
+}
+
+/* A short debounce: long enough that a fast typist issues one request per word
+ * rather than per keystroke, short enough to feel immediate. */
+function onQueryInput() {
+  const q = $('q').value.trim();
+  if (q === App.lastQuery) return;
+  App.lastQuery = q;
+  clearTimeout(App.searchTimer);
+  if (!q) { $('suggest').innerHTML = ''; return; }
+  App.searchTimer = setTimeout(async () => {
+    const r = await api('/api/suggest?limit=8&q=' + encodeURIComponent(q), {}, 6000);
+    if ($('q').value.trim() !== q) return;   // a later keystroke already won
+    if (r.ok) renderSuggestions(r.body.results || []);
+  }, 70);
+}
+
 /* ---------- rendering ---------- */
 
 function setConn(kind, text) {
@@ -181,6 +236,7 @@ function renderState(s) {
   renderSlots(s);
   renderRoster(s);
   renderRecent(s);
+  renderQuick(s);
 }
 
 function renderSlots(s) {
@@ -220,7 +276,7 @@ function renderRoster(s) {
   }
   s.roster.forEach((p) => {
     const li = document.createElement('li');
-    li.innerHTML = `<span class="rpos">${p.pos}</span><span>${escapeHtml(p.name)}</span>`;
+    li.innerHTML = `<span class="rpos">${p.pos}</span><span>${escapeHtml(disp(p))}</span>`;
     el.appendChild(li);
   });
 }
@@ -238,7 +294,7 @@ function renderRecent(s) {
     const li = document.createElement('li');
     li.innerHTML =
       `<span class="pk">${r.pick}</span>` +
-      `<span class="who ${mine.has(r.pick) ? 'mine' : ''}">${escapeHtml(r.name)} ` +
+      `<span class="who ${mine.has(r.pick) ? 'mine' : ''}">${escapeHtml(disp(r))} ` +
       `<span class="src">${r.pos} · seat ${r.seat} · ${r.source}</span></span>`;
     const fix = document.createElement('button');
     fix.className = 'ghost';
@@ -275,7 +331,7 @@ function renderPicks(list, opts = {}) {
     li.className = (i === 0 ? 'top' : '') + (weak ? ' weak' : '');
     li.innerHTML =
       `<span class="rank">${i + 1}</span>` +
-      `<span><span class="name">${escapeHtml(p.name)}</span>` +
+      `<span><span class="name">${escapeHtml(disp(p))}</span>` +
       (weak ? '<span class="flag">low value — much easier to replace later</span>' : '') +
       `</span>` +
       `<span class="pos">${p.pos}</span>` +
@@ -389,14 +445,14 @@ async function proposeFromFeed() {
   const conflicts = body.conflicts || [];
   if (!adds.length && !conflicts.length) { box.classList.add('hidden'); return r; }
 
-  const names = adds.slice(0, 6).map((a) => `${a.pick}. ${escapeHtml(a.name)}`).join(', ');
+  const names = adds.slice(0, 6).map((a) => `${a.pick}. ${escapeHtml(disp(a))}`).join(', ');
   let html = adds.length
     ? `The feed has <b>${adds.length}</b> pick(s) you do not: ${names}${adds.length > 6 ? '…' : ''}`
     : '';
   if (conflicts.length) {
     const c = conflicts[0];
     html += `<div class="conflict">Disagreement at pick ${c.pick}: ` +
-      `you have ${escapeHtml(c.local.name)}, the feed says ${escapeHtml(c.remote.name)}.</div>`;
+      `you have ${escapeHtml(disp(c.local))}, the feed says ${escapeHtml(disp(c.remote))}.</div>`;
   }
   $('proposalText').innerHTML = html;
   box.classList.remove('hidden');
@@ -406,7 +462,6 @@ async function proposeFromFeed() {
 async function claimById(playerId) {
   if (App.busy) return;
   App.busy = true;
-  setPicksStale(true);
   const r = await post('/api/claim', { player_id: playerId });
   App.busy = false;
   if (r.body && r.body.state) renderState(r.body.state);
@@ -416,36 +471,40 @@ async function claimById(playerId) {
   } else {
     entryMsg('recorded ' + (r.body.item ? r.body.item.name : ''), false);
     $('q').value = '';
+    App.lastQuery = '';
     $('suggest').innerHTML = '';
     $('panicOut').classList.add('hidden');
   }
-  refreshAdvice(true);
+  scheduleAdvice();
 }
 
-async function claimByQuery(q) {
-  if (!q.trim() || App.busy) return;
-  App.busy = true;
-  const r = await post('/api/claim', { query: q.trim() });
-  App.busy = false;
-  if (r.body && r.body.state) renderState(r.body.state);
+/* Advice costs a second or two. Recomputing it after every entry would make a
+ * burst of nine opponent picks queue up behind nine simulations, so it is
+ * coalesced -- except when we are on the clock, where it is the only thing
+ * that matters. */
+function scheduleAdvice() {
+  clearTimeout(App.adviceTimer);
+  const s = App.state;
+  const urgent = s && (s.my_turn || (s.picks_until_my_turn != null && s.picks_until_my_turn <= 1));
+  if (urgent) { setPicksStale(true); refreshAdvice(true); return; }
+  setPicksStale(true);
+  App.adviceTimer = setTimeout(() => refreshAdvice(true), 700);
+}
 
-  if (r.body && r.body.ambiguous) {
-    const box = $('suggest');
-    box.innerHTML = '';
-    (r.body.results || []).forEach((p) => {
-      const b = document.createElement('button');
-      b.innerHTML = `${escapeHtml(p.name)} <span class="s-pos">${p.pos} · adp ${p.adp ?? '—'}</span>`;
-      b.onclick = () => claimById(p.player_id);
-      box.appendChild(b);
-    });
-    entryMsg(r.body.error || 'pick one', true);
-    return;
+/* Enter no longer submits a raw query. The server used to resolve a partial
+ * name out of sight and could commit the wrong player -- observed live, where
+ * correcting it cost far more time than the entry saved. Enter now just shows
+ * the matches immediately; committing is always a click on a visible name. */
+async function showMatchesNow() {
+  clearTimeout(App.searchTimer);
+  const q = $('q').value.trim();
+  if (!q) return;
+  const r = await api('/api/suggest?limit=8&q=' + encodeURIComponent(q), {}, 6000);
+  if (r.ok) {
+    const results = r.body.results || [];
+    renderSuggestions(results);
+    if (!results.length) entryMsg('no player matches "' + q + '"', true);
   }
-  if (r.body && r.body.ok === false) { entryMsg(r.body.error || 'not recorded', true); return; }
-  entryMsg('recorded ' + (r.body.item ? r.body.item.name : ''), false);
-  $('q').value = '';
-  $('suggest').innerHTML = '';
-  refreshAdvice(true);
 }
 
 function entryMsg(text, isErr) {
@@ -501,7 +560,7 @@ async function fixSearch(q) {
   box.innerHTML = '';
   results.forEach((p) => {
     const b = document.createElement('button');
-    b.innerHTML = `${escapeHtml(p.name)} <span class="s-pos">${p.pos} · adp ${p.adp ?? '—'}</span>`;
+    b.innerHTML = `${escapeHtml(disp(p))} <span class="s-pos">${p.pos} · adp ${p.adp ?? '—'}</span>`;
     b.onclick = () => applyFix(p.player_id);
     box.appendChild(b);
   });
@@ -580,8 +639,21 @@ function startPolling() {
 }
 
 function bind() {
-  $('add').onclick = () => claimByQuery($('q').value);
-  $('q').onkeydown = (e) => { if (e.key === 'Enter') claimByQuery($('q').value); };
+  // Several event types, because the value can change without an `input`
+  // event: pasting, autofill, and programmatic entry all reach the box by
+  // different routes, and a search box that silently does nothing is exactly
+  // the failure this was built to remove.
+  ['input', 'keyup', 'paste', 'change'].forEach((evt) => {
+    $('q').addEventListener(evt, () => setTimeout(onQueryInput, 0));
+  });
+  $('q').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); showMatchesNow(); } };
+  $('clearQ').onclick = () => {
+    $('q').value = '';
+    App.lastQuery = '';
+    $('suggest').innerHTML = '';
+    entryMsg('', false);
+    $('q').focus();
+  };
   $('undo').onclick = doUndo;
   $('panic').onclick = doPanic;
   $('goManual').onclick = goManual;

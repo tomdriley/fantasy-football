@@ -90,6 +90,43 @@ with it, would otherwise silently overwrite a board the operator has been
 maintaining by hand. Instead it surfaces the difference -- "the feed has 3 picks
 you do not", or "you have X at pick 24, the feed says Y" -- and waits.
 
+### Recording a pick is click-first
+
+Manual mode is only viable if entry keeps up with the room, and the binding
+constraint is not our own turn -- it is the gap before it. Nine opponents
+autopicking can produce eighteen picks in seconds, and every one has to be
+recorded before our own board means anything.
+
+A rehearsal failed on the second pick for exactly this reason: entry was a text
+box that submitted a raw query, the server resolved it out of sight, and it
+resolved to the wrong player. Noticing, undoing and retyping cost more than the
+typing saved.
+
+Three changes, in order of how much time each returns:
+
+1. **A grid of the 18 likeliest players, one click each.** Measured against a
+   realistic field over 1800 picks, the next player claimed is in the top 15 of
+   market order 86% of the time and the top 5 76% of the time. Most picks
+   therefore need no typing at all.
+2. **Typing narrows a visible list, live.** Search runs on every keystroke
+   (~20 ms server-side, 70 ms debounce) and *never* collapses to a single
+   result. `find` deliberately resolves to one plausible name because a
+   terminal prompt has no room for a list; a clickable list has room, and
+   hiding the alternatives is what made a wrong guess expensive.
+3. **Committing is always a click on a visible name.** The raw-query path was
+   removed outright. Pressing Enter shows matches; it does not record.
+
+Names render as the platform renders them -- `J. Gibbs` -- so the operator is
+matching identical strings rather than translating between two formats. Where
+an abbreviation would be ambiguous among draftable players (Bijan vs Brian
+Robinson) the full name is shown instead; judged against the whole 3300-player
+pool a quarter of the top 100 would lose the short form to someone unpickable,
+so ambiguity is scoped to players who might actually be claimed.
+
+Advice recomputation is coalesced during a burst -- nine entries must not queue
+behind nine simulations -- except when we are on the clock, where it is the only
+thing that matters.
+
 ## 4. The primary screen
 
 Designed for a 20-second read under stress:
@@ -234,7 +271,7 @@ seconds. That means **tiers and rules**, not a ranked list of 200 names.
 | What they experience | What the product does |
 |---|---|
 | Tool shows stale board | Timestamp on screen; loud staleness warning past 15 s |
-| Network drops mid-draft | After 3 failed polls the tool switches itself to manual entry, seeded with the picks already retrieved. Type a surname as each pick happens; lookup is fuzzy, so "gibbs" or even "gibs" resolves. Ambiguous names offer a numbered choice. `undo` reverses a mistype, and the board is saved after every entry so a crash loses nothing |
+| Network drops mid-draft | After 3 failed polls the tool switches itself to manual entry, seeded with the picks already retrieved. Recording is click-first: a grid of the 18 likeliest players covers ~86% of picks with one click, and typing narrows a live list rather than submitting a guess. `undo` reverses a mistake, and the board is saved after every entry so a crash loses nothing |
 | Tool crashes | Printed sheet |
 | Recommendation looks strange | SANITY line explains the deviation and its cause |
 | Timer nearly expired | Big clear "TAKE" marker on option 1 — one unambiguous action |

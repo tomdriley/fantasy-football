@@ -95,6 +95,10 @@ class DraftService:
         with self._lock:
             return {"results": self.session.search(query)}
 
+    def suggest(self, query: str, limit: int = 8) -> dict:
+        with self._lock:
+            return {"results": self.session.suggest(query, limit)}
+
     # -- writes ---------------------------------------------------------
     def _mutate(self, fn: Callable[[], Any]) -> dict:
         with self._lock:
@@ -233,6 +237,10 @@ def make_handler(service: DraftService) -> type[BaseHTTPRequestHandler]:
                         return self._json(service.propose())
                     if route == "/api/search":
                         return self._json(service.search((query.get("q") or [""])[0]))
+                    if route == "/api/suggest":
+                        limit = int((query.get("limit") or [8])[0])
+                        return self._json(service.suggest(
+                            (query.get("q") or [""])[0], max(1, min(limit, 25))))
                     return self._json({"error": "unknown endpoint"}, 404)
                 return self._static(route.lstrip("/"))
             except session.SessionError as exc:

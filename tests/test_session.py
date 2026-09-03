@@ -814,3 +814,178 @@ class TestAdviceDeterminism(unittest.TestCase):
     def test_live_trials_exceed_the_measured_convergence_point(self):
         """Seeds agreed from 60 upward; below that the top pick flipped."""
         self.assertGreaterEqual(session.LIVE_TRIALS, 60)
+
+
+class TestFastEntry(unittest.TestCase):
+    """Recording an opponent's pick is the time-critical path.
+
+    Between two of our own turns up to eighteen picks can land, and nine
+    autopicking opponents take only seconds. A mock draft was lost on the
+    second pick because entry was too slow: the search collapsed to a single
+    wrong player and correcting it cost more than the entry saved.
+    """
+
+    def setUp(self):
+        self.cfg = config.load()
+        self.path = pathlib.Path(tempfile.mkdtemp()) / "s.json"
+        self.s = session.DraftSession(self.cfg, board=_board(), path=self.path)
+        self.s.start(3, "manual")
+
+    def test_suggest_never_hides_alternatives(self):
+        """`find` collapses to one plausible name; `suggest` must not.
+
+        The board deliberately reuses surnames across positions, mirroring the
+        real pool where "Smith" is one draftable player and several who are
+        not. Live, that collapse recorded the wrong player silently.
+        """
+        results = self.s.suggest("ashford", limit=8)
+        self.assertGreater(len(results), 1, f"only got {results}")
+        self.assertTrue(
+            all("ashford" in r["name"].lower() for r in results), results
+        )
+
+    def test_find_still_collapses_where_suggest_does_not(self):
+        """The two must genuinely differ, or nothing was actually fixed.
+
+        Reproduces the real shape of the problem: one draftable player shares a
+        surname with several who will never be claimed. `find` treats that as
+        unambiguous and returns the one; the operator who meant a different one
+        gets no say. `suggest` shows them all.
+        """
+        board = [
+            _item("s1", "DeVonta Smith", "WR", 32.3),
+            _item("s2", "Brashard Smith", "RB", 226.3),
+            _item("s3", "Terrelle Smith", "RB", 347.5),
+            _item("s4", "Arian Smith", "WR", 438.4),
+        ]
+        sess = session.DraftSession(self.cfg, board=board, path=self.path)
+        self.assertEqual(len(sess.search("smith")), 1)
+        self.assertEqual(sess.search("smith")[0]["name"], "DeVonta Smith")
+
+        expanded = sess.suggest("smith", limit=8)
+        self.assertEqual(len(expanded), 4)
+        self.assertEqual(expanded[0]["name"], "DeVonta Smith")
+
+    def test_suggest_puts_the_likeliest_player_first(self):
+        """Ordering is by market consensus, so the likely one is on top."""
+        results = self.s.suggest("ashford", limit=8)
+        adps = [r["adp"] for r in results if r["adp"] is not None]
+        self.assertEqual(adps, sorted(adps))
+
+    def test_suggest_matches_a_partial_surname(self):
+        results = self.s.suggest("ashf", limit=8)
+        self.assertTrue(results)
+        self.assertTrue(all("Ashford" in r["name"] for r in results), results)
+
+    def test_suggest_is_empty_for_nonsense(self):
+        self.assertEqual(self.s.suggest("zzzzqqqq", limit=8), [])
+
+    def test_suggest_respects_the_limit(self):
+        self.assertLessEqual(len(self.s.suggest("a", limit=5)), 5)
+
+    def test_suggest_skips_players_already_taken(self):
+        first = self.s.suggest("ashford", limit=8)[0]
+        self.s.claim(first["player_id"])
+        again = [r["player_id"] for r in self.s.suggest("ashford", limit=8)]
+        self.assertNotIn(first["player_id"], again)
+
+    def test_quick_board_is_market_ordered(self):
+        quick = self.s.quick_board(limit=10)
+        self.assertEqual(len(quick), 10)
+        adps = [q["adp"] for q in quick]
+        self.assertEqual(adps, sorted(adps))
+
+    def test_quick_board_drops_claimed_players(self):
+        first = self.s.quick_board(limit=5)[0]
+        self.s.claim(first["player_id"])
+        after = [q["player_id"] for q in self.s.quick_board(limit=5)]
+        self.assertNotIn(first["player_id"], after)
+        self.assertEqual(len(after), 5, "the grid must refill, not shrink")
+
+    def test_quick_board_survives_a_full_burst(self):
+        """Eighteen picks back to back, the worst realistic gap."""
+        seen = set()
+        for _ in range(18):
+            pid = self.s.quick_board(limit=18)[0]["player_id"]
+            self.assertNotIn(pid, seen, "a claimed player was offered again")
+            self.s.claim(pid)
+            seen.add(pid)
+        self.assertEqual(self.s.picks_made, 18)
+
+    def test_snapshot_carries_the_grid(self):
+        """The grid must arrive with state, not cost an extra round trip."""
+        self.assertTrue(self.s.snapshot()["quick"])
+
+
+class TestShortNames(unittest.TestCase):
+    """Display names match the platform's own format.
+
+    During a draft the operator compares this screen against the draft room.
+    Two differently formatted names take measurably longer to match than two
+    identical ones, and that time comes out of a 60-second budget.
+    """
+
+    def setUp(self):
+        self.cfg = config.load()
+        self.path = pathlib.Path(tempfile.mkdtemp()) / "s.json"
+
+    def test_a_normal_name_is_abbreviated(self):
+        self.assertEqual(pool.short_name("Jahmyr Gibbs", "RB"), "J. Gibbs")
+
+    def test_punctuation_in_a_first_name_is_handled(self):
+        self.assertEqual(pool.short_name("Ja'Marr Chase", "WR"), "J. Chase")
+
+    def test_a_multi_token_surname_is_kept_whole(self):
+        self.assertEqual(pool.short_name("Amon-Ra St. Brown", "WR"), "A. St. Brown")
+        self.assertEqual(
+            pool.short_name("Jaxon Smith-Njigba", "WR"), "J. Smith-Njigba"
+        )
+
+    def test_an_existing_initialism_is_left_alone(self):
+        """"A. Brown" is no shorter, and there are several Browns."""
+        self.assertEqual(pool.short_name("A.J. Brown", "WR"), "A.J. Brown")
+        self.assertEqual(pool.short_name("T.J. Hockenson", "TE"), "T.J. Hockenson")
+
+    def test_a_defense_shows_its_nickname(self):
+        """Team defenses have no personal name; the nickname identifies them."""
+        self.assertEqual(pool.short_name("Los Angeles Rams", "DEF"), "Rams")
+        self.assertEqual(pool.short_name("San Francisco 49ers", "DEF"), "49ers")
+
+    def test_a_single_word_name_is_unchanged(self):
+        self.assertEqual(pool.short_name("Cher", "WR"), "Cher")
+        self.assertEqual(pool.short_name("", "WR"), "")
+
+    def test_an_ambiguous_name_keeps_its_full_form(self):
+        """Bijan and Brian Robinson are both draftable running backs.
+
+        Collapsing both to "B. Robinson" would make recording the wrong one a
+        coin flip -- precisely the error the format is meant to prevent.
+        """
+        board = [
+            _item("r1", "Bijan Robinson", "RB", 2.2),
+            _item("r2", "Brian Robinson", "RB", 118.0),
+            _item("g1", "Jahmyr Gibbs", "RB", 1.2),
+        ]
+        s = session.DraftSession(self.cfg, board=board, path=self.path)
+        by_name = {b["name"]: b["short"] for b in s.quick_board(limit=5)}
+        self.assertEqual(by_name["Bijan Robinson"], "Bijan Robinson")
+        self.assertEqual(by_name["Brian Robinson"], "Brian Robinson")
+        self.assertEqual(by_name["Jahmyr Gibbs"], "J. Gibbs")
+
+    def test_an_undraftable_namesake_does_not_spoil_the_short_form(self):
+        """Judging ambiguity over the whole pool would cost a quarter of them."""
+        board = [
+            _item("s1", "DeVonta Smith", "WR", 32.3),
+            _item("s2", "Terrelle Smith", "RB", 347.5),
+        ]
+        s = session.DraftSession(self.cfg, board=board, path=self.path)
+        shorts = {b["name"]: b["short"] for b in s.quick_board(limit=5)}
+        self.assertEqual(shorts["DeVonta Smith"], "D. Smith")
+
+    def test_every_brief_carries_a_short_name(self):
+        s = session.DraftSession(self.cfg, board=_board(), path=self.path)
+        s.start(3, "manual")
+        for entry in s.quick_board(limit=6) + s.suggest("ash", limit=4):
+            self.assertTrue(entry["short"], entry)
+        s.claim(s.quick_board(limit=1)[0]["player_id"])
+        self.assertTrue(s.snapshot()["recent"][0]["short"])

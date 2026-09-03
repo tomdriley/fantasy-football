@@ -36,6 +36,37 @@ def _name(player: dict, record: dict) -> str:
     return full or str(record.get("team") or player.get("player_id") or "?")
 
 
+def short_name(name: str, pos: str) -> str:
+    """"Jahmyr Gibbs" -> "J. Gibbs", matching how the platform lists picks.
+
+    Display only -- searching and matching still use the full name. The point
+    is recognition speed: during a draft the operator is comparing what is on
+    this screen against what the platform shows, and two differently formatted
+    names take measurably longer to match than two identical ones.
+
+    Three cases are left alone because abbreviating them would lose the part
+    that identifies the player:
+
+    * A first name that is already an initialism ("A.J. Brown", "T.J.
+      Hockenson"). "A. Brown" is not shorter in any useful sense and there are
+      several Browns.
+    * Multi-token surnames ("Amon-Ra St. Brown" -> "A. St. Brown"): everything
+      after the first token is kept.
+    * Team defenses, which have no personal name at all. The nickname alone is
+      how they are listed and is unique across the league.
+    """
+    if pos == "DEF":
+        parts = name.split()
+        return parts[-1] if parts else name
+    parts = name.split()
+    if len(parts) < 2:
+        return name
+    first, rest = parts[0], " ".join(parts[1:])
+    if "." in first:
+        return name
+    return f"{first[0]}. {rest}"
+
+
 def build(
     records: Iterable[dict],
     weights: dict[str, float],

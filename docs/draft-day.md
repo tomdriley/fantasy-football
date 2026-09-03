@@ -85,8 +85,22 @@ Press **P** or click the big red **PANIC** button. It answers instantly and
 gives several names. Take the first one still available.
 
 ### The tool says "offline"
-Nothing to do. It keeps working from the local board. Type each pick as it
-happens in the **Enter a pick** box (a surname is enough: `gibbs`).
+Nothing to do. It keeps working from the local board. Record each pick in the
+**Record a pick** card — see below.
+
+### Recording opponents' picks quickly
+This is the time-critical part: nine opponents autopicking can fire off a dozen
+picks in seconds, and they all have to be recorded.
+
+- The **Most likely next** grid shows the 18 players most likely to go next.
+  **One click records a pick.** Roughly 86% of picks are on this grid, so most
+  need no typing at all.
+- If the player is not on the grid, type part of the surname. Matches appear
+  **as you type**, and you click the right one. Typing alone never records
+  anything — the commit is always a click on a name you can see.
+- Names are shown the way Sleeper shows them (`J. Gibbs`), so you are matching
+  identical text rather than translating. Where an abbreviation would be
+  ambiguous — Bijan vs Brian Robinson — the full name is shown instead.
 
 ### You typed the wrong player
 Click **Fix** next to that pick in the Recent list. Replace him, or remove the

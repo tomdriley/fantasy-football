@@ -136,6 +136,59 @@ def find(query: str, items: Sequence[pool.Item]) -> Match:
     return Match(None, candidates[:6])
 
 
+def suggest(query: str, items: Sequence[pool.Item], limit: int = 8) -> list[pool.Item]:
+    """Ranked candidates for a partial name, *never* collapsed to one.
+
+    `find` deliberately resolves to a single item when only one candidate is
+    plausibly draftable, because a terminal prompt has no room to show a list.
+    A clickable list does have room, and hiding the alternatives is what makes
+    a wrong guess expensive: typing "smith" returned exactly one Smith, so an
+    operator who meant a different one had to notice the wrong name, undo it
+    and retype -- inside a 60-second window where a dozen picks might need
+    recording.
+
+    Showing every match costs nothing and makes a wrong entry hard to commit by
+    accident, because the operator clicks a name they can see. Ordering is by
+    market consensus, so the likeliest player is first and the undraftable
+    namesakes are below rather than absent.
+    """
+    q = _norm(query)
+    if not q:
+        return []
+
+    scored: dict[str, tuple[int, float, pool.Item]] = {}
+
+    def add(rank: int, found: Sequence[pool.Item]) -> None:
+        for i in found:
+            key = i.player_id or i.name
+            adp = i.adp if i.adp is not None else 9e9
+            if key not in scored or rank < scored[key][0]:
+                scored[key] = (rank, adp, i)
+
+    add(0, [i for i in items if _norm(i.name) == q])
+    add(1, [i for i in items if _surname(i) == q])
+    add(2, [i for i in items if i.pos == "DEF" and q in _norm(i.name).split()])
+    add(3, [i for i in items if _surname(i).startswith(q)])
+
+    parts = q.split()
+    if len(parts) == 2 and len(parts[0]) == 1:
+        add(3, [
+            i for i in items
+            if _surname(i) == parts[1] and _norm(i.name).startswith(parts[0])
+        ])
+
+    add(4, [i for i in items if any(w.startswith(q) for w in _norm(i.name).split())])
+    add(5, [i for i in items if q in _norm(i.name)])
+
+    if not scored:
+        by_surname = {_surname(i): i for i in items}
+        close = difflib.get_close_matches(q, list(by_surname), n=limit, cutoff=0.7)
+        add(6, [by_surname[c] for c in close])
+
+    ranked = sorted(scored.values(), key=lambda t: (t[0], t[1]))
+    return [item for _, _, item in ranked[:limit]]
+
+
 class ManualBoard:
     """A locally maintained record of which items have been claimed."""
 
