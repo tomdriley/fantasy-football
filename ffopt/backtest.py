@@ -147,14 +147,17 @@ def pick_projection_greedy(
 def pick_optimizer(
     roster: Sequence[pool.Item], alive: list[int], ctx: DraftContext,
     seat: int = 1, current_pick: int = 1, trials: int = 30,
-    num_candidates: int = 8, horizon: int = 0, **_
+    num_candidates: int = 8, horizon: int = 0,
+    bot_seats: int | set[int] | None = None, **_
 ) -> int:
     sub = [ctx.board[i] for i in alive]
     recs = optimizer.recommend(
         list(roster), sub, ctx.cfg, seat=seat, current_pick=current_pick,
         vor=ctx.vor, waivers=ctx.waivers, num_candidates=num_candidates, trials=trials,
         horizon=horizon,
-        reach=availability.DEFAULT_REACH, bot_seats=ctx.bot_seats, rng=ctx.rng,
+        reach=availability.DEFAULT_REACH,
+        bot_seats=ctx.bot_seats if bot_seats is None else bot_seats,
+        rng=ctx.rng,
     )
     chosen = recs[0].item
     return alive[sub.index(chosen)]
@@ -252,7 +255,43 @@ def pick_depth(
     return alive[0]
 
 
+def pick_human(
+    roster: Sequence[pool.Item], alive: list[int], ctx: DraftContext,
+    picks_remaining: int = 0, **_
+) -> int:
+    """A human opponent: broadly consensus-following, but reaches sometimes.
+
+    Used to distinguish bot seats from human seats when testing whether knowing
+    *which* seats are deterministic is worth anything. Real autopick seats never
+    reach; human seats do, which is exactly what makes bot seats predictable and
+    human seats not.
+    """
+    cfg = ctx.cfg
+    counts: dict[str, int] = {}
+    for item in roster:
+        counts[item.pos] = counts.get(item.pos, 0) + 1
+    missing = {
+        position for position, slots in cfg.dedicated_slots.items()
+        if counts.get(position, 0) < slots
+    }
+    if missing and picks_remaining <= len(missing):
+        forced = [i for i in alive if ctx.board[i].pos in missing]
+        if forced:
+            return forced[0]
+    caps = _slot_capacity(cfg)
+    eligible = [
+        i for i in alive
+        if counts.get(ctx.board[i].pos, 0) < caps.get(ctx.board[i].pos, 0)
+    ] or alive
+    # Geometric reach past the consensus-best available option.
+    offset = 0
+    while ctx.rng.random() > 0.4 and offset < len(eligible) - 1:
+        offset += 1
+    return eligible[offset]
+
+
 STRATEGIES: dict[str, Strategy] = {
+    "human": pick_human,
     "depth": pick_depth,
     "hybrid": pick_hybrid,
     "autopick": pick_autopick,

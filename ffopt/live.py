@@ -108,7 +108,7 @@ def recommend_now(
     recs = optimizer.recommend(
         state.my_roster, available, cfg, seat=seat, current_pick=current,
         vor=vor, waivers=waivers, trials=trials, horizon=horizon,
-        bot_seats=len(cfg.bot_seats()),
+        bot_seats=set(cfg.bot_seats()),
     )
     return recs, vor
 

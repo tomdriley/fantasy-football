@@ -150,3 +150,23 @@ class TestValuation(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestSeatMapping(unittest.TestCase):
+    """seat_of_pick must invert pick_numbers, since bot identification relies on it."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.cfg = config.load()
+
+    def test_inverts_pick_numbers_for_every_pick(self):
+        for seat in range(1, self.cfg.num_agents + 1):
+            for pick in self.cfg.pick_numbers(seat):
+                self.assertEqual(self.cfg.seat_of_pick(pick), seat, f"pick {pick}")
+
+    def test_snake_direction(self):
+        n = self.cfg.num_agents
+        self.assertEqual(self.cfg.seat_of_pick(1), 1)
+        self.assertEqual(self.cfg.seat_of_pick(n), n)
+        self.assertEqual(self.cfg.seat_of_pick(n + 1), n)
+        self.assertEqual(self.cfg.seat_of_pick(2 * n), 1)

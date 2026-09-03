@@ -107,6 +107,15 @@ class LeagueConfig:
             picks.append((rnd - 1) * n + offset)
         return picks
 
+    def seat_of_pick(self, pick_no: int) -> int:
+        """Which draft slot is on the clock at 1-based overall `pick_no`.
+
+        Inverse of `pick_numbers`. Odd rounds run 1..N, even rounds reverse.
+        """
+        n = self.num_agents
+        rnd, offset = divmod(pick_no - 1, n)
+        return offset + 1 if rnd % 2 == 0 else n - offset
+
     def bot_seats(self) -> list[int]:
         """Draft slots owned by nobody, which run deterministic autopick.
 

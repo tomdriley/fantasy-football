@@ -195,7 +195,7 @@ def rollout(
     my_remaining_picks: Sequence[int],
     current_pick: int,
     model: availability.OpponentModel,
-    bot_seats: int,
+    bot_seats: int | set[int],
     total_picks: int,
     vor: dict[str, float],
     waivers: dict[str, float],
@@ -228,8 +228,16 @@ def rollout(
             roster.append(board[idx])
             left -= 1
         else:
-            # Opponent seats cycle; approximate bot incidence by frequency.
-            is_bot = model.rng.random() < (bot_seats / max(cfg.num_agents - 1, 1))
+            if isinstance(bot_seats, set):
+                # Bot seats are known exactly, so their picks are not merely
+                # likely to be deterministic -- they *are* deterministic, and at
+                # which pick number is known in advance. Sampling their
+                # incidence instead throws that away: for a middle seat every
+                # pick between the first and second turn is a bot, while a
+                # frequency model would treat fewer than half of them as such.
+                is_bot = cfg.seat_of_pick(pick_no) in bot_seats
+            else:
+                is_bot = model.rng.random() < (bot_seats / max(cfg.num_agents - 1, 1))
             claimable = [i for i in alive if budget.get(board[i].pos, 0) > 0]
             idx = model.claim(claimable or alive, deterministic=is_bot)
         budget[board[idx].pos] = budget.get(board[idx].pos, 0) - 1
@@ -249,7 +257,7 @@ def recommend(
     num_candidates: int = 8,
     trials: int = 60,
     reach: float = availability.DEFAULT_REACH,
-    bot_seats: int = 0,
+    bot_seats: int | set[int] = 0,
     horizon: int = 0,
     rng: random.Random | None = None,
 ) -> list[Recommendation]:
