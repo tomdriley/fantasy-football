@@ -107,10 +107,25 @@ Click **Fix** next to that pick in the Recent list. Replace him, or remove the
 pick entirely if it never happened.
 
 ### You missed entering a pick and everything is now off by one
-This matters — it makes the tool think the wrong players are yours. Click
-**Fix** on the pick where the mistake starts, then use **Remove pick**, or
-re-enter the missing one in the right position. The roster panel on the right
-should always match what Sleeper shows as your team.
+**The tool now catches this by itself.** It compares its board against Sleeper
+every few seconds — in every mode, including manual — and if they disagree you
+get a red banner: *"Board out of step. Sleeper has 2 picks you have not
+recorded. You are showing 4.3, Sleeper is on 4.5."*
+
+Click **Match Sleeper** and the board is rebuilt from Sleeper's own record.
+
+You can also spot it yourself without waiting for the banner. The big number at
+the top right — `4.5` — is **Sleeper's own label for the pick on the clock**. It
+should always equal the pick Sleeper is highlighting. If it does not, the board
+has drifted.
+
+The roster panel on the right should always match what Sleeper shows as your
+team.
+
+### It is your turn and you are not sure what you are clicking
+Under **Record a pick** it says either `Recording pick 4.5 — seat 3` or, in
+green, `Recording YOUR pick (4.5)`. Clicking a player means different things one
+pick apart, so check that line before clicking if you have lost track.
 
 ### The feed and your board disagree (assisted mode)
 A blue box appears saying what the feed has that you do not. Click **Accept

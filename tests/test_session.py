@@ -12,7 +12,7 @@ import pathlib
 import tempfile
 import unittest
 
-from ffopt import config, pool, session
+from ffopt import client, config, pool, session
 
 
 def _item(pid, name, pos, adp, payoff=200.0):
@@ -989,3 +989,151 @@ class TestShortNames(unittest.TestCase):
             self.assertTrue(entry["short"], entry)
         s.claim(s.quick_board(limit=1)[0]["player_id"])
         self.assertTrue(s.snapshot()["recent"][0]["short"])
+
+
+class TestAlignment(unittest.TestCase):
+    """Detecting a board that has drifted out of step with the room.
+
+    The worst failure in a live draft, because it is silent. A missed or
+    duplicated entry shifts every later pick by one; the board still looks
+    orderly, but the tool now believes players are available who are gone and
+    attributes picks to the wrong rosters. It surfaced in a rehearsal only when
+    the operator's own turn arrived, several picks of bad advice later.
+    """
+
+    def setUp(self):
+        self.cfg = config.load()
+        self.path = pathlib.Path(tempfile.mkdtemp()) / "s.json"
+        self.s = session.DraftSession(self.cfg, board=_board(), path=self.path)
+        self.s.start(5, "manual")
+        self.ids = [i.player_id for i in self.s.available()[:8]]
+        self._original = client.draft_picks
+
+    def tearDown(self):
+        client.draft_picks = self._original
+
+    def _feed(self, ids):
+        client.draft_picks = lambda _d: [{"player_id": p} for p in ids]
+
+    def test_a_matching_board_is_aligned(self):
+        self._feed(self.ids[:5])
+        for pid in self.ids[:5]:
+            self.s.claim(pid)
+        a = self.s.alignment()
+        self.assertTrue(a["aligned"])
+        self.assertEqual(a["drift"], 0)
+        self.assertIsNone(a["first_conflict"])
+
+    def test_a_missed_pick_is_detected(self):
+        """The mistake actually made: one opponent pick never recorded."""
+        self._feed(self.ids[:5])
+        for pid in self.ids[:4]:
+            self.s.claim(pid)
+        a = self.s.alignment()
+        self.assertFalse(a["aligned"])
+        self.assertEqual(a["drift"], -1)
+        self.assertEqual(a["local_label"], self.cfg.pick_label(5))
+        self.assertEqual(a["remote_label"], self.cfg.pick_label(6))
+
+    def test_a_duplicated_pick_is_detected(self):
+        self._feed(self.ids[:3])
+        for pid in self.ids[:5]:
+            self.s.claim(pid)
+        self.assertEqual(self.s.alignment()["drift"], 2)
+
+    def test_a_wrong_player_is_detected_even_when_the_count_matches(self):
+        """The harder case: nothing about the totals looks wrong."""
+        self._feed(self.ids[:5])
+        for pid in self.ids[:5]:
+            self.s.claim(pid)
+        self.s.correct(2, self.ids[6])
+        a = self.s.alignment()
+        self.assertFalse(a["aligned"])
+        self.assertEqual(a["drift"], 0, "counts agree; only the content differs")
+        self.assertEqual(a["first_conflict"], 2)
+        self.assertEqual(a["first_conflict_label"], self.cfg.pick_label(2))
+
+    def test_being_offline_is_reported_not_guessed(self):
+        """Manual mode must keep working with no network at all."""
+        def boom(_d):
+            raise RuntimeError("no network")
+        client.draft_picks = boom
+        a = self.s.alignment()
+        self.assertFalse(a["checked"])
+        self.assertIsNone(a["aligned"])
+        self.assertIn("no network", a["error"])
+
+    def test_the_check_never_changes_the_board(self):
+        """Manual mode exists so the feed cannot rewrite the operator's board."""
+        self._feed(self.ids[:6])
+        self.s.claim(self.ids[0])
+        before = list(self.s.claimed_ids)
+        self.s.alignment()
+        self.assertEqual(list(self.s.claimed_ids), before)
+        self.assertEqual(self.s.picks_made, 1)
+
+    def test_adopting_the_feed_repairs_a_drifted_board(self):
+        self._feed(self.ids[:5])
+        for pid in self.ids[:3]:
+            self.s.claim(pid)
+        result = self.s.adopt_feed()
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["changed"], 2)
+        self.assertTrue(self.s.alignment()["aligned"])
+
+    def test_adopting_discards_entries_past_the_feed(self):
+        """Entries beyond the feed are what a mis-entry looks like.
+
+        `sync` keeps them on purpose, because assisted mode runs ahead of a
+        lagging feed. Recovery must not, or the drift survives the repair.
+        """
+        self._feed(self.ids[:3])
+        for pid in self.ids[:6]:
+            self.s.claim(pid)
+        self.s.adopt_feed()
+        self.assertEqual(self.s.picks_made, 3)
+        self.assertTrue(self.s.alignment()["aligned"])
+
+    def test_adopting_offline_fails_without_destroying_the_board(self):
+        def boom(_d):
+            raise RuntimeError("offline")
+        client.draft_picks = boom
+        for pid in self.ids[:4]:
+            self.s.claim(pid)
+        result = self.s.adopt_feed()
+        self.assertFalse(result["ok"])
+        self.assertEqual(self.s.picks_made, 4, "a failed repair must not clear picks")
+
+
+class TestPickLabels(unittest.TestCase):
+    """Pick numbering must match the platform's, or it cannot be compared."""
+
+    def setUp(self):
+        self.cfg = config.load()
+
+    def test_labels_match_the_platform_format(self):
+        n = self.cfg.num_agents
+        self.assertEqual(self.cfg.pick_label(1), "1.1")
+        self.assertEqual(self.cfg.pick_label(n), f"1.{n}")
+        self.assertEqual(self.cfg.pick_label(n + 1), "2.1")
+
+    def test_labels_count_within_the_round_not_by_seat(self):
+        """Even rounds run backwards: round 2 position 1 is the last seat."""
+        n = self.cfg.num_agents
+        self.assertEqual(self.cfg.seat_of_pick(n + 1), n)
+        self.assertEqual(self.cfg.pick_label(n + 1), "2.1")
+
+    def test_a_seats_labels_snake(self):
+        """Verified against a real draft board screenshot for seat 5."""
+        if self.cfg.num_agents != 10:
+            self.skipTest("fixture is for a 10-team league")
+        labels = [self.cfg.pick_label(n) for n in self.cfg.pick_numbers(5)][:6]
+        self.assertEqual(labels, ["1.5", "2.6", "3.5", "4.6", "5.5", "6.6"])
+
+    def test_the_snapshot_exposes_the_label(self):
+        s = session.DraftSession(self.cfg, board=_board(),
+                                 path=pathlib.Path(tempfile.mkdtemp()) / "s.json")
+        s.start(5, "manual")
+        self.assertEqual(s.snapshot()["pick_label"], "1.1")
+        s.claim(s.available()[0].player_id)
+        self.assertEqual(s.snapshot()["pick_label"], "1.2")

@@ -116,6 +116,22 @@ class LeagueConfig:
         rnd, offset = divmod(pick_no - 1, n)
         return offset + 1 if rnd % 2 == 0 else n - offset
 
+    def pick_label(self, pick_no: int) -> str:
+        """Format a pick the way the platform labels it: "9.5".
+
+        The platform numbers picks *within* a round, not overall, so its board
+        shows 9.5 where we would say pick 85. Displaying our own numbering
+        makes the two impossible to compare at a glance -- and comparing them
+        is the only cheap way for the operator to notice that our board has
+        drifted out of step with the room, which silently invalidates every
+        recommendation after it.
+
+        Note this is a position in the round, not a seat: even rounds run
+        backwards, so round 2 position 6 is seat 5.
+        """
+        rnd, offset = divmod(pick_no - 1, self.num_agents)
+        return f"{rnd + 1}.{offset + 1}"
+
     def bot_seats(self) -> list[int]:
         """Draft slots owned by nobody, which run deterministic autopick.
 

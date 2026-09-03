@@ -33,7 +33,18 @@
   <section id="advice" class="card wide">
     <div class="advice-head">
       <h1 id="turn">Loading…</h1>
-      <div id="clock" class="clock"></div>
+      <div class="head-right">
+        <div id="pickLabel" class="pick-label" title="Sleeper's label for the pick on the clock — this must match your draft board">—</div>
+        <div id="clock" class="clock"></div>
+      </div>
+    </div>
+
+    <div id="drift" class="drift hidden">
+      <div id="driftText"></div>
+      <div class="row">
+        <button id="driftFix" class="primary">Match Sleeper</button>
+        <button id="driftIgnore" class="ghost">Ignore</button>
+      </div>
     </div>
 
     <ol id="picks" class="picks"></ol>
@@ -54,6 +65,7 @@
     <h2>Record a pick</h2>
     <p class="hint">Click the player who was just taken. Type only if they are
        not shown below.</p>
+    <div id="whoFor" class="who-for"></div>
 
     <div class="entry">
       <input id="q" type="text" autocomplete="off" spellcheck="false"

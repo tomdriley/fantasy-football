@@ -174,6 +174,16 @@ class DraftService:
         with self._lock:
             return {**self.session.propose(), "state": self.session.snapshot()}
 
+    def alignment(self) -> dict:
+        # The local half is read under the lock; the network call is not, since
+        # an alignment check that blocks the panic button defeats its purpose.
+        with self._lock:
+            local_ids = [c.player_id for c in self.session.claims]
+        return self.session.alignment(local_ids)
+
+    def adopt_feed(self) -> dict:
+        return self._mutate(self.session.adopt_feed)
+
 
 def make_handler(service: DraftService) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
@@ -235,6 +245,8 @@ def make_handler(service: DraftService) -> type[BaseHTTPRequestHandler]:
                         return self._json(service.panic())
                     if route == "/api/propose":
                         return self._json(service.propose())
+                    if route == "/api/alignment":
+                        return self._json(service.alignment())
                     if route == "/api/search":
                         return self._json(service.search((query.get("q") or [""])[0]))
                     if route == "/api/suggest":
@@ -278,6 +290,8 @@ def make_handler(service: DraftService) -> type[BaseHTTPRequestHandler]:
                     return self._json(service.set_seat(int(seat) if seat else None))
                 if route == "/api/sync":
                     return self._json(service.sync())
+                if route == "/api/adopt":
+                    return self._json(service.adopt_feed())
                 return self._json({"error": "unknown endpoint"}, 404)
             except session.SessionError as exc:
                 self._json({"ok": False, "error": str(exc),

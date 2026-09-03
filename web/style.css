@@ -242,3 +242,30 @@ footer { display: flex; justify-content: space-between; padding: 10px 18px;
 .sug-btn { border-color: var(--blue); }
 .sug-btn:hover { border-color: var(--accent); }
 .suggest { margin-top: 8px; }
+
+/* ---------- alignment ---------- */
+/* The pick label is the one number visible on both this screen and the draft
+   board, so it is sized to be read at a glance rather than sought out. */
+.head-right { display: flex; align-items: center; gap: 12px; }
+.pick-label {
+  font-size: 1.5rem; font-weight: 700; letter-spacing: .02em;
+  padding: 2px 12px; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.pick-label.mine {
+  background: var(--accent); color: #08210f; border-color: var(--accent);
+}
+.drift {
+  margin: 10px 0; padding: 11px 14px; border-radius: 8px;
+  background: #3a1d1d; border: 1px solid var(--danger); font-size: .88rem;
+}
+.drift b { color: var(--danger); }
+.who-for {
+  font-size: .82rem; font-weight: 600; color: var(--dim);
+  padding: 5px 9px; margin: 6px 0 2px; border-radius: 5px;
+  background: var(--panel-2); border: 1px solid var(--line);
+}
+.who-for.mine {
+  color: #08210f; background: var(--accent); border-color: var(--accent);
+}

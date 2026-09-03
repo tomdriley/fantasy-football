@@ -16,7 +16,7 @@ import unittest
 import urllib.error
 import urllib.request
 
-from ffopt import pool, session, webapp
+from ffopt import client, pool, session, webapp
 
 
 def _item(pid, name, pos, adp, payoff=200.0):
@@ -615,3 +615,55 @@ class TestFastEntryEndpoints(WebTestCase):
         self.assertFalse(second["ok"])
         self.assertIn("already claimed", second["error"])
         self.assertEqual(second["state"]["picks_made"], 1)
+
+
+class TestAlignmentEndpoints(WebTestCase):
+    """Drift detection and repair, over HTTP."""
+
+    def setUp(self):
+        super().setUp()
+        self.post("/api/start", {"seat": 5, "mode": "manual"})
+        self.ids = [i.player_id for i in self.service.session.available()[:8]]
+        self._original = client.draft_picks
+
+    def tearDown(self):
+        client.draft_picks = self._original
+
+    def _feed(self, ids):
+        client.draft_picks = lambda _d: [{"player_id": p} for p in ids]
+
+    def test_alignment_reports_a_matching_board(self):
+        self._feed(self.ids[:4])
+        for pid in self.ids[:4]:
+            self.post("/api/claim", {"player_id": pid})
+        _, body = self.get("/api/alignment")
+        self.assertTrue(body["aligned"])
+
+    def test_alignment_reports_a_missed_pick(self):
+        self._feed(self.ids[:5])
+        for pid in self.ids[:3]:
+            self.post("/api/claim", {"player_id": pid})
+        _, body = self.get("/api/alignment")
+        self.assertFalse(body["aligned"])
+        self.assertEqual(body["drift"], -2)
+
+    def test_alignment_does_not_mutate_the_board(self):
+        self._feed(self.ids[:6])
+        self.post("/api/claim", {"player_id": self.ids[0]})
+        self.get("/api/alignment")
+        _, state = self.get("/api/state")
+        self.assertEqual(state["picks_made"], 1)
+
+    def test_adopt_repairs_the_board(self):
+        self._feed(self.ids[:5])
+        for pid in self.ids[:2]:
+            self.post("/api/claim", {"player_id": pid})
+        _, body = self.post("/api/adopt")
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["state"]["picks_made"], 5)
+        _, check = self.get("/api/alignment")
+        self.assertTrue(check["aligned"])
+
+    def test_state_carries_the_platform_pick_label(self):
+        _, body = self.get("/api/state")
+        self.assertEqual(body["pick_label"], "1.1")

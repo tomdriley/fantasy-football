@@ -21,6 +21,9 @@ const App = {
   searchTimer: null,
   adviceTimer: null,
   lastQuery: null,
+  alignment: null,
+  driftIgnored: null,
+  alignTick: 0,
 };
 
 /* ---------- transport ---------- */
@@ -116,6 +119,68 @@ async function goManual() {
   status('manual');
 }
 
+/* ---------- alignment ---------- */
+
+/* A missed or duplicated entry shifts every later pick by one. Nothing about
+ * that is visible -- the board still looks orderly -- but the tool now thinks
+ * players are available who are gone, and attributes picks to the wrong
+ * rosters. It is normally noticed on your own turn, several bad picks later.
+ *
+ * So the feed is polled for agreement in every mode, including manual. The
+ * check never writes; manual mode exists so the operator is not at the mercy
+ * of the feed, and asking "do we agree?" does not surrender that. */
+
+async function checkAlignment() {
+  const r = await api('/api/alignment', {}, 8000);
+  if (!r.ok || !r.body || !r.body.checked) return;   // offline: nothing to say
+  const a = r.body;
+  App.alignment = a;
+
+  const box = $('drift');
+  if (a.aligned) {
+    box.classList.add('hidden');
+    App.driftIgnored = null;
+    return;
+  }
+
+  // Dismissing silences this mismatch, not all future ones. A permanently
+  // muted alarm is worse than none: the drift compounds while the operator
+  // believes they decided it was harmless.
+  const signature = `${a.drift}:${a.first_conflict || 0}`;
+  if (App.driftIgnored === signature) return;
+  App.driftIgnored = null;
+
+  const bits = [];
+  if (a.drift !== 0) {
+    const n = Math.abs(a.drift);
+    bits.push(a.drift > 0
+      ? `You have <b>${n}</b> pick(s) more than Sleeper.`
+      : `Sleeper has <b>${n}</b> pick(s) you have not recorded.`);
+  }
+  if (a.first_conflict) {
+    bits.push(`Your pick <b>${a.first_conflict_label}</b> does not match Sleeper's.`);
+  }
+  bits.push(`You are showing <b>${a.local_label}</b>, Sleeper is on <b>${a.remote_label}</b>.`);
+  $('driftText').innerHTML =
+    `<b>Board out of step.</b> ${bits.join(' ')} ` +
+    `Advice is unreliable until this is fixed.`;
+  box.classList.remove('hidden');
+}
+
+async function fixAlignment() {
+  const r = await post('/api/adopt');
+  if (r.body && r.body.state) renderState(r.body.state);
+  if (r.body && r.body.ok === false) {
+    entryMsg(r.body.error || 'could not reach Sleeper', true);
+    return;
+  }
+  const n = r.body && r.body.item ? r.body.item.changed : 0;
+  entryMsg(`board matched to Sleeper (${n > 0 ? '+' : ''}${n} picks)`, false);
+  $('drift').classList.add('hidden');
+  App.driftIgnored = null;
+  refreshAdvice(true);
+}
+
 /* ---------- recording picks ---------- */
 
 /* Recording an opponent's pick is the time-critical path: between two of our
@@ -203,6 +268,29 @@ function renderState(s) {
     $('turn').textContent = `Waiting — seat ${s.seat_on_clock} on the clock (pick ${s.current_pick})`;
   }
   $('clock').textContent = `${s.picks_made} / ${s.total_picks} picks`;
+
+  // The platform's own label for the pick on the clock. This is the cheapest
+  // way to notice that the board has drifted: it is the one number visible on
+  // both screens, so a mismatch is a glance rather than an audit.
+  $('pickLabel').textContent = s.complete ? 'done' : s.pick_label || '—';
+  $('pickLabel').classList.toggle('mine', !!s.my_turn);
+
+  // Clicking a player means different things one pick apart -- "an opponent
+  // took him" or "I am taking him" -- and which one is decided by a counter
+  // the operator cannot see. Saying it out loud is what makes a drifted board
+  // noticeable before it is acted on.
+  const who = $('whoFor');
+  if (s.complete) {
+    who.textContent = '';
+    who.className = 'who-for';
+  } else if (s.my_turn) {
+    who.textContent = `Recording YOUR pick (${s.pick_label})`;
+    who.className = 'who-for mine';
+  } else {
+    who.textContent = `Recording pick ${s.pick_label} — seat ${s.seat_on_clock}` +
+      (s.seat ? ` (you are seat ${s.seat})` : '');
+    who.className = 'who-for';
+  }
 
   if (s.mode === 'manual') setConn('manual', 'manual');
   else if (s.last_sync_error) setConn('offline', 'offline — using local board');
@@ -631,6 +719,12 @@ function startPolling() {
         await doSync();
         if (App.state && App.state.picks_made !== before) await refreshAdvice(true);
       }
+      // Drift is silent and compounds, so it is checked even when nothing
+      // else touches the network -- but less often, since it is a safety net
+      // rather than the main loop.
+      if (!setupOpen && App.state && ++App.alignTick % 3 === 0) {
+        await checkAlignment();
+      }
     } finally {
       App.polling = setTimeout(tick, pollInterval());
     }
@@ -657,6 +751,13 @@ function bind() {
   $('undo').onclick = doUndo;
   $('panic').onclick = doPanic;
   $('goManual').onclick = goManual;
+  $('driftFix').onclick = fixAlignment;
+  $('driftIgnore').onclick = () => {
+    const a = App.alignment;
+    App.driftIgnored = a ? `${a.drift}:${a.first_conflict || 0}` : null;
+    $('drift').classList.add('hidden');
+    entryMsg('mismatch dismissed — you will be warned again if it changes', true);
+  };
   $('openSetup').onclick = () => openSetup(true);
   $('setupStart').onclick = applySetup;
   $('setupCancel').onclick = () => $('setup').classList.add('hidden');
@@ -733,6 +834,7 @@ async function main() {
 
   if (App.state.mode !== 'manual') await doSync();
   await refreshAdvice(true);
+  checkAlignment();
   startPolling();
   status('ready');
 }

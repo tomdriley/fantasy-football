@@ -416,6 +416,94 @@ class DraftSession:
         result = self.sync()
         return self.picks_made if result.get("ok") else -1
 
+    def alignment(self, local_ids: list[str] | None = None) -> dict:
+        """Is our board still in step with the room? Changes nothing.
+
+        The failure this exists for: a missed or duplicated entry shifts every
+        later pick by one, so the tool believes players are available who are
+        gone and attributes picks to the wrong rosters. Nothing about that is
+        visible -- the board still looks orderly -- and every recommendation
+        after it is wrong. It is only noticed on our own turn, by which point
+        several picks have been made on bad advice.
+
+        Checked in *every* mode, including manual. Manual mode exists so the
+        operator is not at the mercy of the feed, but reading the feed to ask
+        "do we agree?" costs nothing and never writes. Offline it degrades to
+        reporting that it does not know, which is honest and still lets the
+        pick label be eyeballed against the platform.
+        """
+        local_ids = (
+            list(local_ids) if local_ids is not None
+            else [c.player_id for c in self.claims]
+        )
+        local = len(local_ids)
+        out = {
+            "local_total": local,
+            "local_label": self.cfg.pick_label(min(local + 1, self.total_picks)),
+            "checked": False,
+            "aligned": None,
+            "drift": 0,
+            "first_conflict": None,
+        }
+        try:
+            picks = client.draft_picks(self.cfg.draft_id)
+        except Exception as exc:  # noqa: BLE001 - offline is a normal state
+            out["error"] = str(exc)
+            return out
+
+        remote_ids = [str(p.get("player_id")) for p in picks if p.get("player_id")]
+        remote = len(remote_ids)
+        first = next(
+            (
+                n + 1 for n in range(min(len(local_ids), remote))
+                if local_ids[n] != remote_ids[n]
+            ),
+            None,
+        )
+        out.update({
+            "checked": True,
+            "remote_total": remote,
+            "remote_label": self.cfg.pick_label(min(remote + 1, self.total_picks)),
+            "drift": local - remote,
+            "first_conflict": first,
+            "first_conflict_label": self.cfg.pick_label(first) if first else None,
+            "aligned": local == remote and first is None,
+        })
+        return out
+
+    def adopt_feed(self) -> dict:
+        """Replace the board with the feed's, wholesale.
+
+        The recovery action for a board that has drifted. Unlike `sync`, this
+        does *not* preserve manual entries beyond the feed: entries past the
+        feed's end are exactly what a mis-entry looks like, and keeping them is
+        what let the drift persist. The feed is the room's own record, so when
+        the two disagree the feed wins.
+        """
+        try:
+            picks = client.draft_picks(self.cfg.draft_id)
+        except Exception as exc:  # noqa: BLE001
+            self.last_sync_error = str(exc)
+            self.save()
+            return {"ok": False, "error": str(exc)}
+
+        before = self.picks_made
+        self.claims = [
+            Claim(str(p.get("player_id")), "api")
+            for p in picks if p.get("player_id")
+        ]
+        self.last_sync_error = None
+        self.last_sync_at = time.time()
+        if self.seat is None:
+            self._infer_seat(picks)
+        self.save()
+        return {
+            "ok": True,
+            "before": before,
+            "after": self.picks_made,
+            "changed": self.picks_made - before,
+        }
+
     def sync(self) -> dict:
         """Pull claims from the platform feed.
 
@@ -723,6 +811,9 @@ class DraftSession:
             "picks_made": self.picks_made,
             "total_picks": self.total_picks,
             "current_pick": self.current_pick,
+            # The platform's own notation, so the two boards can be compared
+            # without translating between numbering schemes.
+            "pick_label": self.cfg.pick_label(self.current_pick),
             "round": min((self.current_pick - 1) // self.cfg.num_agents + 1, self.cfg.rounds),
             "seat_on_clock": self.seat_on_clock(),
             "my_turn": self.is_my_turn(),

@@ -165,3 +165,31 @@ class TestPollingBehaviour(unittest.TestCase):
 
     def test_manual_mode_never_polls(self):
         self.assertIn("mode !== 'manual'", JS)
+
+    def test_board_drift_is_detected_and_repairable(self):
+        """A drifted board is silent and compounds; it must be surfaced.
+
+        A rehearsal lost a pick this way: an entry was missed, every later
+        pick shifted by one, and the tool went on recommending players who
+        were already gone until the operator's own turn arrived.
+        """
+        self.assertIn("checkAlignment", JS)
+        self.assertIn("/api/alignment", JS)
+        self.assertIn("/api/adopt", JS)
+        self.assertIn('id="drift"', HTML)
+        self.assertIn('id="driftFix"', HTML)
+
+    def test_dismissing_drift_does_not_mute_it_forever(self):
+        """A permanently silenced alarm is worse than no alarm."""
+        self.assertIn("signature", JS)
+        self.assertIn("App.driftIgnored === signature", JS)
+
+    def test_the_platform_pick_label_is_displayed(self):
+        """The one number visible on both screens, so drift is a glance."""
+        self.assertIn('id="pickLabel"', HTML)
+        self.assertIn("pick_label", JS)
+
+    def test_whose_pick_is_being_recorded_is_stated(self):
+        """Clicking means different things one pick apart."""
+        self.assertIn('id="whoFor"', HTML)
+        self.assertIn("Recording YOUR pick", JS)

@@ -127,6 +127,39 @@ Advice recomputation is coalesced during a burst -- nine entries must not queue
 behind nine simulations -- except when we are on the clock, where it is the only
 thing that matters.
 
+### Drift is the failure that has to be caught automatically
+
+A missed or duplicated entry shifts every later pick by one. The board still
+looks orderly, so nothing signals a problem, but the tool now believes players
+are available who are gone and attributes picks to the wrong rosters. Every
+recommendation after the mistake is wrong. In a rehearsal it was noticed only
+when the operator's own turn arrived, several picks later, and by then the
+damage was already taken.
+
+Three defences, cheapest first.
+
+**Show the one number that appears on both screens.** The platform labels picks
+within the round -- `9.5` -- where we would say pick 85. Displaying our own
+numbering made the two impossible to compare. The platform's label is now shown
+large, next to the pick counter, so a mismatch is a glance rather than an audit.
+
+**Say whose pick is being recorded.** Clicking a player means "an opponent took
+him" or "I am taking him" depending on a counter the operator cannot see. The
+card now states which, and turns green on our own turn.
+
+**Ask the feed whether it agrees.** Polled in every mode, including manual, and
+it never writes -- manual mode exists so the operator is not at the mercy of the
+feed, but asking "do we agree?" does not surrender that. It catches both shapes
+of the error: a count that has drifted, and the harder case where the counts
+agree but a pick is the wrong player. Offline it reports that it does not know,
+which is honest, and the label can still be eyeballed.
+
+Repair is one click. `Match Sleeper` rebuilds the board from the feed's own
+record. Unlike a normal sync it discards entries past the feed's end, because
+those are exactly what a mis-entry looks like and keeping them is what let the
+drift persist. Dismissing the warning silences that mismatch only: if the drift
+changes the warning returns, since a permanently muted alarm is worse than none.
+
 ## 4. The primary screen
 
 Designed for a 20-second read under stress:
