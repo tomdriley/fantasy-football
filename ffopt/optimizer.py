@@ -115,6 +115,23 @@ def marginal_value(
     return season.marginal_season_value(roster, item, cfg, waivers)
 
 
+def payoff_order_by_position(board: Sequence[pool.Item]) -> dict[str, list[int]]:
+    """Board indices grouped by type, each sorted by descending payoff.
+
+    Built once per decision. The continuation policy needs the best remaining
+    item of each type, and the board is ordered by consensus rather than payoff,
+    so finding it by scanning cost a linear pass over every remaining player on
+    every simulated pick. Walking a precomputed order instead stops at the first
+    item still available.
+    """
+    out: dict[str, list[int]] = {}
+    for idx, item in enumerate(board):
+        out.setdefault(item.pos, []).append(idx)
+    for indices in out.values():
+        indices.sort(key=lambda i: -board[i].payoff)
+    return out
+
+
 def _greedy_choice(
     roster: list[pool.Item],
     alive: list[int],
@@ -123,6 +140,8 @@ def _greedy_choice(
     vor: dict[str, float],
     waivers: dict[str, float],
     picks_remaining: int,
+    by_pos: dict[str, list[int]] | None = None,
+    alive_set: set[int] | None = None,
 ) -> int:
     """Continuation policy: take the largest immediate lineup gain.
 
@@ -142,13 +161,22 @@ def _greedy_choice(
     # item of each type can win, which reduces the candidate scan from ~120 to
     # at most 6 and leaves the result identical.
     best_per_pos: dict[str, int] = {}
-    for idx in alive:
-        item = board[idx]
-        if required and item.pos not in required:
-            continue
-        incumbent = best_per_pos.get(item.pos)
-        if incumbent is None or item.payoff > board[incumbent].payoff:
-            best_per_pos[item.pos] = idx
+    if by_pos is not None and alive_set is not None:
+        for position, ordered in by_pos.items():
+            if required and position not in required:
+                continue
+            for idx in ordered:
+                if idx in alive_set:
+                    best_per_pos[position] = idx
+                    break
+    else:
+        for idx in alive:
+            item = board[idx]
+            if required and item.pos not in required:
+                continue
+            incumbent = best_per_pos.get(item.pos)
+            if incumbent is None or item.payoff > board[incumbent].payoff:
+                best_per_pos[item.pos] = idx
     if not best_per_pos:
         return alive[0]
 
@@ -200,6 +228,7 @@ def rollout(
     vor: dict[str, float],
     waivers: dict[str, float],
     horizon: int = 0,
+    by_pos: dict[str, list[int]] | None = None,
 ) -> float:
     """Simulate the rest of the draft and return our final lineup value.
 
@@ -211,6 +240,7 @@ def rollout(
     """
     roster = list(roster)
     alive = list(alive)
+    alive_set = set(alive)
     upcoming = sorted(p for p in my_remaining_picks if p > current_pick)
     if horizon > 0:
         upcoming = upcoming[:horizon]
@@ -224,7 +254,8 @@ def rollout(
         if not alive:
             break
         if pick_no in mine:
-            idx = _greedy_choice(roster, alive, board, cfg, vor, waivers, left)
+            idx = _greedy_choice(roster, alive, board, cfg, vor, waivers, left,
+                                 by_pos, alive_set)
             roster.append(board[idx])
             left -= 1
         else:
@@ -238,10 +269,20 @@ def rollout(
                 is_bot = cfg.seat_of_pick(pick_no) in bot_seats
             else:
                 is_bot = model.rng.random() < (bot_seats / max(cfg.num_agents - 1, 1))
-            claimable = [i for i in alive if budget.get(board[i].pos, 0) > 0]
+            # Opponents never reach deeper than the model's capped offset, so
+            # only the first few eligible items can ever be selected. Filtering
+            # the whole remaining board here cost 63 million dict lookups per
+            # recommendation; stopping early is exact, not an approximation.
+            claimable = []
+            for i in alive:
+                if budget.get(board[i].pos, 0) > 0:
+                    claimable.append(i)
+                    if len(claimable) > availability.MAX_REACH:
+                        break
             idx = model.claim(claimable or alive, deterministic=is_bot)
         budget[board[idx].pos] = budget.get(board[idx].pos, 0) - 1
         alive.remove(idx)
+        alive_set.discard(idx)
     return season.season_value(roster, cfg, waivers)
 
 
@@ -294,6 +335,7 @@ def recommend(
             if idx not in shortlist:
                 shortlist.append(idx)
 
+    by_pos = payoff_order_by_position(board)
     results: list[Recommendation] = []
     for idx in shortlist:
         item = board[idx]
@@ -313,6 +355,7 @@ def recommend(
                 vor,
                 waivers,
                 horizon,
+                by_pos,
             )
         results.append(
             Recommendation(

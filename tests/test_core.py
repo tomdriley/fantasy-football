@@ -214,3 +214,33 @@ class TestApiAccessRequirements(unittest.TestCase):
         """Stale picks are worse than no picks."""
         source = pathlib.Path(client.__file__).read_text()
         self.assertIn("ttl=0", source.split("def draft_picks")[1])
+
+
+class TestOpponentReachBound(unittest.TestCase):
+    """The reach cap is relied on for an exact optimisation.
+
+    The rollout stops filtering candidates once it has more than MAX_REACH of
+    them, which is only correct if an opponent can never select an item deeper
+    than that. If the cap is raised without updating the filter, the two would
+    silently disagree.
+    """
+
+    def test_sampled_offset_never_exceeds_the_cap(self):
+        import random
+        from ffopt import availability
+        model = availability.OpponentModel(reach=50.0, rng=random.Random(0))
+        for _ in range(2000):
+            self.assertLessEqual(model._sample_offset(False), availability.MAX_REACH)
+
+    def test_deterministic_opponents_take_the_best_available(self):
+        import random
+        from ffopt import availability
+        model = availability.OpponentModel(reach=5.0, rng=random.Random(0))
+        for _ in range(50):
+            self.assertEqual(model.claim([7, 8, 9], deterministic=True), 7)
+
+    def test_rollout_filter_window_covers_the_cap(self):
+        from ffopt import availability, optimizer
+        source = pathlib.Path(optimizer.__file__).read_text()
+        self.assertIn("availability.MAX_REACH", source)
+        self.assertGreater(availability.MAX_REACH, 0)

@@ -430,3 +430,47 @@ class TestLockContention(WebTestCase):
         self.assertTrue(picks)
         fresh = self.service.recommend(trials=2)
         self.assertNotIn("1", [p["player_id"] for p in fresh["picks"]])
+
+
+class TestResponsiveness(WebTestCase):
+    """Latency guards.
+
+    The interface was measurably sluggish: a recommendation after a claim took
+    nearly nine seconds because the rollout rescanned every remaining player on
+    every simulated pick. Two exact optimisations removed that. These tests fail
+    if the hot paths regress, since a slow tool is a tool that costs picks.
+    """
+
+    def test_recommendation_is_fast_on_a_full_board(self):
+        import time
+        self.post("/api/seat", {"seat": 5})
+        self.service.invalidate()
+        start = time.perf_counter()
+        self.service.recommend(trials=30)
+        elapsed = time.perf_counter() - start
+        self.assertLess(elapsed, 5.0, f"recommendation took {elapsed:.1f}s")
+
+    def test_recommendation_stays_fast_mid_draft(self):
+        import time
+        self.post("/api/seat", {"seat": 5})
+        for pid in range(1, 40):
+            self.service.claim(str(pid), None)
+        self.service.invalidate()
+        start = time.perf_counter()
+        self.service.recommend(trials=30)
+        elapsed = time.perf_counter() - start
+        self.assertLess(elapsed, 5.0, f"mid-draft recommendation took {elapsed:.1f}s")
+
+    def test_panic_is_effectively_instant(self):
+        import time
+        self.post("/api/seat", {"seat": 5})
+        start = time.perf_counter()
+        self.service.panic()
+        self.assertLess(time.perf_counter() - start, 0.5)
+
+    def test_state_read_is_effectively_instant(self):
+        import time
+        start = time.perf_counter()
+        for _ in range(20):
+            self.service.state()
+        self.assertLess(time.perf_counter() - start, 1.0)

@@ -28,6 +28,11 @@ from . import pool
 # available item by consensus order. 0 reproduces strict consensus ordering.
 DEFAULT_REACH = 1.5
 
+#: Hard cap on how far past the consensus-best an opponent will ever reach.
+#: Bounding the tail keeps the model realistic and lets callers avoid scanning
+#: the whole remaining board, since deeper items can never be selected.
+MAX_REACH = 40
+
 
 class OpponentModel:
     """Samples which board index an opponent claims."""
@@ -46,7 +51,7 @@ class OpponentModel:
         j = 0
         while self.rng.random() > p:
             j += 1
-            if j > 40:  # guard against pathological tails
+            if j >= MAX_REACH:  # bound the tail; see MAX_REACH
                 break
         return j
 
