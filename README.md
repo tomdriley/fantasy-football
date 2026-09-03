@@ -7,7 +7,8 @@ problem rather than a forecasting one.
 
 | Document | Question it answers |
 |---|---|
-| [**How this works**](docs/how-this-works.md) | **Start here.** What the game is and what the software does, assuming no football knowledge |
+| [**Draft day**](docs/draft-day.md) | **Read this on the day.** What to run, what to click, what to do when something breaks |
+| [**How this works**](docs/how-this-works.md) | What the game is and what the software does, assuming no football knowledge |
 | [Algorithm](docs/algorithm.md) | **The objective function and decision rule, as equations.** Written to be audited: every parameter's source, every approximation ranked by how much it is distrusted |
 | [Strategy plan](docs/draft-strategy-plan.md) | **Why** this approach, and why not machine-learned projections |
 | [League rules](docs/league-rules.md) | **What** the rules are, in plain language, assuming no football knowledge |

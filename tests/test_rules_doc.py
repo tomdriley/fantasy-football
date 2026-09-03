@@ -102,3 +102,32 @@ class TestPlainLanguageDoc(unittest.TestCase):
     def test_tells_the_operator_what_to_do(self):
         self.assertIn("scripts/draft.py", self.flat)
         self.assertIn("--manual", self.flat)
+
+
+class TestDraftDayDoc(unittest.TestCase):
+    """The one document that gets read under time pressure."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.flat = " ".join((DOCS / "draft-day.md").read_text().split())
+
+    def test_names_the_commands_to_run(self):
+        for cmd in ("scripts/make_sheet.py", "scripts/serve.py"):
+            self.assertIn(cmd, self.flat)
+
+    def test_covers_every_failure_mode(self):
+        for situation in ("clock is nearly out", "offline", "wrong player",
+                          "off by one", "laptop is gone"):
+            self.assertIn(situation, self.flat)
+
+    def test_states_the_non_negotiables(self):
+        self.assertIn("Kicker last", self.flat)
+        self.assertIn("One quarterback", self.flat)
+        self.assertIn("Never end the draft unable to fill a slot", self.flat)
+
+    def test_explains_the_trap_warning(self):
+        self.assertIn("low value", self.flat)
+        self.assertIn("Do not take him", self.flat)
+
+    def test_keeps_the_expectation_honest(self):
+        self.assertIn("edge, not a guarantee", self.flat)
