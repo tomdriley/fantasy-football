@@ -324,7 +324,30 @@ Concrete, executable checks. **None have been run.**
 Claims use 2025 pre-season information only; scores come from 2025 realized outcomes. Controlled
 A/B: one seat varies strategy, the other nine run autopick, identical seeds.
 
-### Headline: five seasons, 200 controlled configurations
+### Re-validated 2026-09-03 under changed league scoring
+
+Hours before the draft the league switched kicker scoring from fixed per-field-goal buckets to
+distance-based (`fgm_yds: 0.1`). That changes every payoff, so the result below had to be
+re-established rather than assumed. The golden-file guard caught it: 18/18 replayed drafts changed
+behaviour, which is exactly what that file exists to detect.
+
+Re-run over the same five seasons, 100 configurations (5 seasons x 10 seats x 2 repetitions):
+
+| Season | autopick | engine | edge | wins |
+|---|---|---|---|---|
+| 2021 | 2327 | **2470** | **+6.1%** | 16/20 |
+| 2022 | 2267 | **2531** | **+11.6%** | 20/20 |
+| 2023 | 2268 | **2529** | **+11.5%** | 20/20 |
+| 2024 | 2203 | **2602** | **+18.1%** | 20/20 |
+| 2025 | 2235 | **2306** | **+3.1%** | 11/20 |
+| **pooled** | **2260** | **2487** | **+10.1%** | **87/100** |
+
+Mean edge **+227 points, t = 11.30**, positive in every season. The old bucket keys did not match
+the forecast feed's `fgm_50p`, so long field goals had been scoring zero; the corrected rule raises
+the best kicker's value over replacement from +4 to +12 — still the least valuable position on the
+board by an order of magnitude, so no decision logic changed shape.
+
+### Headline: five seasons, 200 controlled configurations (original scoring)
 
 | Season | autopick | heuristic | optimizer | vs autopick | vs heuristic |
 |---|---|---|---|---|---|

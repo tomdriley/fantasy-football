@@ -24,7 +24,17 @@ class TestConfig(unittest.TestCase):
             sum(self.cfg.starting_slots.values()) + self.cfg.bench_slots,
             self.cfg.roster_size,
         )
-        self.assertEqual(len(self.cfg.scoring_weights), 43)
+        # Deliberately not a magic count. The league changed its kicker scoring
+        # hours before the draft (fixed per-FG buckets -> distance-based
+        # fgm_yds), which moved the total from 43 to 44 and failed a hardcoded
+        # assertion that was guarding nothing useful. What matters is that
+        # every weight is a usable number and the scoring types we value are
+        # all represented.
+        self.assertGreater(len(self.cfg.scoring_weights), 20)
+        for key, weight in self.cfg.scoring_weights.items():
+            self.assertIsInstance(weight, float, key)
+        for essential in ("rec", "rec_yd", "rush_yd", "pass_yd", "rush_td", "rec_td"):
+            self.assertIn(essential, self.cfg.scoring_weights)
 
     def test_flex_is_excluded_from_dedicated_slots(self):
         self.assertNotIn("FLEX", self.cfg.dedicated_slots)

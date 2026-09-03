@@ -132,7 +132,7 @@ rather than merely how many, produces no significant improvement. See
 
 ## 6. Scoring weights in plain language
 
-All 43 weights are in the YAML. Grouped and translated:
+All 44 weights are in the YAML. Grouped and translated:
 
 **Passing** (mostly QB)
 - 1 point per 25 yards thrown (`pass_yd: 0.04`)
@@ -150,14 +150,21 @@ All 43 weights are in the YAML. Grouped and translated:
 
 **Turnovers**: −2 for losing the ball (`fum_lost: -2.0`)
 
-**Kicking**: 3–6 points per field goal scaled by distance, 1 per extra point, −1 per miss
+**Kicking**: 0.1 points per field goal *yard* (`fgm_yds: 0.1`), 1 per extra point, −1 per miss
+
+> The league switched from fixed per-field-goal buckets to this distance-based rule shortly before
+> the 2026 draft, which is why the count is 44 rather than 43. The magnitudes are close — a 40-yard
+> kick scored 4.0 under either — but the old bucket keys did not match the forecast feed's
+> `fgm_50p`, so long kicks were silently scoring zero. The new rule is both current and better
+> matched to the data: the best kicker's value over replacement moved from +4 to +12. Still the
+> least valuable position on the board by a wide margin.
 
 **Team defense**: 1 per sack, 2 per interception/fumble recovery, 6 per defensive score, plus a
 tiered bonus for allowing few points (10 for a shutout, down to −4 for allowing 35+)
 
 ### Critical finding: this weight vector is completely standard
 
-I applied these 43 weights to the forecasts and compared against the platform's own stock full-PPR
+I applied these 44 weights to the forecasts and compared against the platform's own stock full-PPR
 computation. **They match exactly.** There is no scoring quirk to exploit — no bonus for tight ends,
 no first-down bonus, no unusual passing values.
 

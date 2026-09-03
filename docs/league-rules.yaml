@@ -3,7 +3,7 @@ _meta:
   description: Machine-readable capture of the league configuration exactly as returned by the Sleeper
     public API. This file is the single source of truth for all downstream code. Do not hand-edit; regenerate
     with scripts/refresh_rules.py.
-  retrieved_at_utc: '2026-09-03T15:22:43.098186+00:00'
+  retrieved_at_utc: '2026-09-03T19:24:17.475586+00:00'
   source_endpoints:
     league: https://api.sleeper.app/v1/league/1400629960678346752
     users: https://api.sleeper.app/v1/league/1400629960678346752/users
@@ -79,19 +79,29 @@ draft:
   reversal_round: 0
   start_time_epoch_ms: 1788465600000
   start_time_utc: '2026-09-03T20:00:00+00:00'
-  draft_order_assigned: false
-  draft_order: null
+  draft_order_assigned: true
+  draft_order:
+    '1260844862459105280': 1
+    '1286010516619137024': 7
+    '1400880093110239232': 3
+    '1400886965527703552': 10
+    '1400888101110329344': 8
+    '1400905871319445504': 9
+    '1401238258561617920': 5
+    '1401254035146694656': 4
+    '1401272972068593664': 2
+    '1401318295080050688': 6
   slot_to_roster_id:
     '1': 1
-    '10': 10
-    '2': 2
-    '3': 3
-    '4': 4
-    '5': 5
-    '6': 6
-    '7': 7
-    '8': 8
-    '9': 9
+    '10': 3
+    '2': 9
+    '3': 2
+    '4': 8
+    '5': 7
+    '6': 10
+    '7': 5
+    '8': 4
+    '9': 6
   total_picks: 150
   picks_made_so_far: 0
 scoring_weights:
@@ -101,12 +111,13 @@ scoring_weights:
   def_st_td: 6.0
   def_td: 6.0
   ff: 1.0
-  fgm_0_19: 3.0
-  fgm_20_29: 3.0
-  fgm_30_39: 3.0
-  fgm_40_49: 4.0
-  fgm_50_59: 5.0
-  fgm_60p: 6.0
+  fgm_0_19: 0.0
+  fgm_20_29: 0.0
+  fgm_30_39: 0.0
+  fgm_40_49: 0.0
+  fgm_50_59: 0.0
+  fgm_60p: 0.0
+  fgm_yds: 0.1
   fgmiss: -1.0
   fum: 0.0
   fum_lost: -2.0
@@ -195,16 +206,16 @@ agents:
   occupied: true
   keepers: []
 - roster_id: 9
-  user_id: null
-  username: null
+  user_id: '1401272972068593664'
+  username: PhantomHawk
   team_name: null
-  occupied: false
+  occupied: true
   keepers: []
 - roster_id: 10
-  user_id: null
-  username: null
+  user_id: '1401318295080050688'
+  username: virenP80
   team_name: null
-  occupied: false
+  occupied: true
   keepers: []
 my_team:
   username: Unranked0283

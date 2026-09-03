@@ -750,10 +750,38 @@ class TestSetup(unittest.TestCase):
         Before the draw it is an identity mapping of slot to roster id. Reading
         a seat out of it would invent an order that does not exist, and the seat
         determines the whole pick schedule.
+
+        The feed is stubbed rather than left live: this asserts a property of
+        our code, and an earlier version passed only because the real league
+        had not drawn its order yet. It started failing the moment the order
+        was published, which is a test measuring the world instead of the
+        thing under test.
         """
-        self.s._infer_seat([])
+        original = client.draft
+        client.draft = lambda _d: {
+            "draft_order": None,                       # not drawn yet
+            "slot_to_roster_id": {str(i): i for i in range(1, 11)},
+        }
+        try:
+            self.s._infer_seat([])
+        finally:
+            client.draft = original
         self.assertIsNone(self.s.seat)
         self.assertIsNone(self.s.seat_source)
+
+    def test_a_published_draft_order_does_set_the_seat(self):
+        """The counterpart: once the order exists, it is authoritative."""
+        original = client.draft
+        client.draft = lambda _d: {
+            "draft_order": {self.cfg.my_user_id: 3},
+            "slot_to_roster_id": {str(i): i for i in range(1, 11)},
+        }
+        try:
+            self.s._infer_seat([])
+        finally:
+            client.draft = original
+        self.assertEqual(self.s.seat, 3)
+        self.assertEqual(self.s.seat_source, "draft_order")
 
     def test_a_pick_attributed_to_us_sets_the_seat(self):
         self.s._infer_seat([
