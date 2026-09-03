@@ -541,6 +541,21 @@ class DraftSession:
         self.save()
         return {"ok": True, "picks": self.picks_made}
 
+    def published_seat(self) -> int | None:
+        """Our seat according to the published draft order, or None.
+
+        Read-only and never applied automatically -- it pre-fills the setup
+        screen so the operator confirms a number rather than hunting for it.
+        The order is often undrawn until minutes before the start, so this
+        returns None just as legitimately as it returns a seat.
+        """
+        try:
+            order = (client.draft(self.cfg.draft_id) or {}).get("draft_order") or {}
+        except Exception:  # noqa: BLE001 - offline: the operator types it
+            return None
+        value = order.get(self.cfg.my_user_id)
+        return int(value) if value else None
+
     def _infer_seat(self, picks: Iterable[dict]) -> None:
         """Determine our seat, from authoritative evidence only.
 

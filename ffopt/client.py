@@ -113,9 +113,33 @@ def league(league_id: str) -> dict:
 
 
 def draft(draft_id: str) -> dict:
-    return get(f"{API_V1}/draft/{draft_id}", f"draft_{draft_id}", ttl=60)
+    """Draft metadata. Briefly cached, but never from a stale CDN copy: the
+    draft order is published minutes before the start and we must see it."""
+    return get(_uncached(f"{API_V1}/draft/{draft_id}"), f"draft_{draft_id}", ttl=60)
+
+
+def _uncached(url: str) -> str:
+    """Add a unique query parameter so the CDN cannot serve a stored copy.
+
+    Measured on the live endpoint: the picks feed is served through Cloudflare
+    with `cache-control: public, s-maxage=30, stale-while-revalidate=300`, and
+    a plain request returns `cf-cache-status: HIT` with an `age` of up to 30
+    seconds. On a 60-second pick timer that is half a pick of lag in the normal
+    case, and `stale-while-revalidate` permits far worse.
+
+    A unique parameter is a distinct cache key, so it misses and reaches
+    origin: verified returning `cf-cache-status: MISS` with no `age` header.
+    The cost is real origin traffic, but polling every 1.5-5s is 12-40 requests
+    a minute against a documented budget of 1000.
+
+    Only used for the live feed. Projections and the player map are large,
+    static for the day, and should stay cached.
+    """
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}_={time.time_ns()}"
 
 
 def draft_picks(draft_id: str) -> list[dict]:
-    """Live claim feed. Never cached."""
-    return get(f"{API_V1}/draft/{draft_id}/picks", f"picks_{draft_id}", ttl=0, timeout=10)
+    """Live claim feed. Never cached, locally or at the CDN."""
+    url = _uncached(f"{API_V1}/draft/{draft_id}/picks")
+    return get(url, f"picks_{draft_id}", ttl=0, timeout=10)

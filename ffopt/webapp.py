@@ -174,6 +174,10 @@ class DraftService:
         with self._lock:
             return {**self.session.propose(), "state": self.session.snapshot()}
 
+    def published_seat(self) -> dict:
+        # Network read, so deliberately outside the lock.
+        return {"seat": self.session.published_seat()}
+
     def alignment(self) -> dict:
         # The local half is read under the lock; the network call is not, since
         # an alignment check that blocks the panic button defeats its purpose.
@@ -247,6 +251,8 @@ def make_handler(service: DraftService) -> type[BaseHTTPRequestHandler]:
                         return self._json(service.propose())
                     if route == "/api/alignment":
                         return self._json(service.alignment())
+                    if route == "/api/published-seat":
+                        return self._json(service.published_seat())
                     if route == "/api/search":
                         return self._json(service.search((query.get("q") or [""])[0]))
                     if route == "/api/suggest":

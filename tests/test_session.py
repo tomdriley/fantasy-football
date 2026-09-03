@@ -1165,3 +1165,38 @@ class TestPickLabels(unittest.TestCase):
         self.assertEqual(s.snapshot()["pick_label"], "1.1")
         s.claim(s.available()[0].player_id)
         self.assertEqual(s.snapshot()["pick_label"], "1.2")
+
+
+class TestPublishedSeat(unittest.TestCase):
+    """Offering the drawn seat, without ever applying it silently."""
+
+    def setUp(self):
+        self.cfg = config.load()
+        self.path = pathlib.Path(tempfile.mkdtemp()) / "s.json"
+        self.s = session.DraftSession(self.cfg, board=_board(), path=self.path)
+        self._original = client.draft
+
+    def tearDown(self):
+        client.draft = self._original
+
+    def test_reads_the_published_order(self):
+        client.draft = lambda _d: {"draft_order": {self.cfg.my_user_id: 3}}
+        self.assertEqual(self.s.published_seat(), 3)
+
+    def test_returns_none_before_the_draw(self):
+        """Undrawn is the normal state until minutes before the start."""
+        client.draft = lambda _d: {"draft_order": None}
+        self.assertIsNone(self.s.published_seat())
+
+    def test_returns_none_when_offline(self):
+        def boom(_d):
+            raise RuntimeError("offline")
+        client.draft = boom
+        self.assertIsNone(self.s.published_seat())
+
+    def test_reading_does_not_apply_the_seat(self):
+        """It pre-fills a screen the operator confirms; it is not a decision."""
+        client.draft = lambda _d: {"draft_order": {self.cfg.my_user_id: 7}}
+        self.s.published_seat()
+        self.assertIsNone(self.s.seat)
+        self.assertFalse(self.s.configured)

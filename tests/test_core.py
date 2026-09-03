@@ -254,3 +254,39 @@ class TestOpponentReachBound(unittest.TestCase):
         source = pathlib.Path(optimizer.__file__).read_text()
         self.assertIn("availability.MAX_REACH", source)
         self.assertGreater(availability.MAX_REACH, 0)
+
+
+class TestCdnCacheBypass(unittest.TestCase):
+    """The live feed must not be served from a CDN cache.
+
+    Measured against the live endpoint on draft day: a plain request returned
+    `cf-cache-status: HIT` with `age: 26` under
+    `cache-control: public, s-maxage=30, stale-while-revalidate=300`. On a
+    60-second pick timer that is half a pick of lag before anything in our code
+    runs, and stale-while-revalidate permits considerably worse. A unique query
+    parameter is a distinct cache key and reaches origin.
+    """
+
+    def test_a_unique_parameter_is_appended(self):
+        from ffopt import client
+        url = client._uncached("https://example.test/v1/draft/1/picks")
+        self.assertIn("?_=", url)
+
+    def test_successive_calls_differ(self):
+        from ffopt import client
+        a = client._uncached("https://example.test/a")
+        b = client._uncached("https://example.test/a")
+        self.assertNotEqual(a, b, "a repeated key would be cacheable again")
+
+    def test_an_existing_query_string_is_preserved(self):
+        from ffopt import client
+        url = client._uncached("https://example.test/a?position=QB")
+        self.assertIn("position=QB", url)
+        self.assertIn("&_=", url)
+
+    def test_static_endpoints_are_left_cacheable(self):
+        """Projections are 5MB and static for the day; busting them is waste."""
+        import inspect
+        from ffopt import client
+        for fn in (client.projections, client.realized_stats):
+            self.assertNotIn("_uncached", inspect.getsource(fn), fn.__name__)

@@ -55,10 +55,23 @@ const post = (path, data) =>
  * cannot answer for itself -- which seat is yours, and where picks come from --
  * rather than guessing and being confidently wrong about both. */
 
-function openSetup(canCancel) {
+async function openSetup(canCancel) {
   const s = App.state;
   if (!s) return;
   App.setupSeat = s.seat || null;
+
+  // The platform publishes the draw shortly before the start. If it has, offer
+  // that number rather than making the operator find it -- confirming a
+  // pre-filled answer is faster and less error-prone than reading it off
+  // another screen under time pressure. Still confirmed, never applied
+  // silently: the seat decides the entire pick schedule.
+  if (App.setupSeat == null) {
+    const r = await api('/api/published-seat', {}, 6000);
+    if (r.ok && r.body && r.body.seat) {
+      App.setupSeat = r.body.seat;
+      App.seatWasPublished = true;
+    }
+  }
 
   const grid = $('setupSeats');
   grid.innerHTML = '';
@@ -97,7 +110,9 @@ function paintSetupSeats() {
   });
   $('setupSeatMsg').textContent = App.setupSeat === null
     ? 'Advice will be best-available only until you set a seat.'
-    : `Seat ${App.setupSeat}.`;
+    : (App.seatWasPublished
+        ? `Seat ${App.setupSeat} — read from the published draft order. Confirm it matches Sleeper.`
+        : `Seat ${App.setupSeat}.`);
   $('setupSeatMsg').className = 'msg' + (App.setupSeat === null ? ' warn-text' : '');
 }
 
