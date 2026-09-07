@@ -3,7 +3,7 @@ _meta:
   description: Machine-readable capture of the league configuration exactly as returned by the Sleeper
     public API. This file is the single source of truth for all downstream code. Do not hand-edit; regenerate
     with scripts/refresh_rules.py.
-  retrieved_at_utc: '2026-09-03T19:24:17.475586+00:00'
+  retrieved_at_utc: '2026-09-05T16:57:38.564515+00:00'
   source_endpoints:
     league: https://api.sleeper.app/v1/league/1400629960678346752
     users: https://api.sleeper.app/v1/league/1400629960678346752/users
@@ -17,7 +17,7 @@ league:
   name: Deeply Unserious League
   season: '2026'
   season_type: regular
-  status: pre_draft
+  status: in_season
   sport: nfl
   total_agents: 10
   previous_league_id: null
@@ -72,13 +72,13 @@ roster_constraints:
 draft:
   draft_id: '1400629961529802752'
   type: snake
-  status: pre_draft
+  status: complete
   rounds: 15
   pick_timer_seconds: 60
   cpu_autopick_enabled: true
   reversal_round: 0
-  start_time_epoch_ms: 1788465600000
-  start_time_utc: '2026-09-03T20:00:00+00:00'
+  start_time_epoch_ms: 1788465726191
+  start_time_utc: '2026-09-03T20:02:06.191000+00:00'
   draft_order_assigned: true
   draft_order:
     '1260844862459105280': 1
@@ -103,7 +103,7 @@ draft:
     '8': 4
     '9': 6
   total_picks: 150
-  picks_made_so_far: 0
+  picks_made_so_far: 150
 scoring_weights:
   blk_kick: 2.0
   def_st_ff: 1.0
@@ -156,67 +156,136 @@ season_structure:
   waiver_type: 0
   max_keepers: 1
   taxi_slots: 0
+in_season:
+  raw_settings:
+    waiver_type: 0
+    waiver_budget: 100
+    waiver_day_of_week: 2
+    waiver_clear_days: 2
+    daily_waivers: 0
+    daily_waivers_hour: 0
+    daily_waivers_days: 5461
+    waiver_bid_min: 0
+    disable_trades: 0
+    trade_deadline: 11
+    trade_review_days: 2
+    pick_trading: 0
+    reserve_slots: 1
+    reserve_allow_out: 0
+    reserve_allow_doubtful: 0
+    reserve_allow_na: 0
+    reserve_allow_sus: 0
+    reserve_allow_cov: 0
+    reserve_allow_dnr: 0
+    disable_adds: 0
+    bench_lock: 0
+    max_subs: 0
+    playoff_week_start: 15
+    playoff_teams: 6
+    playoff_type: 0
+    playoff_round_type: 0
+    playoff_seed_type: 0
+    league_average_match: 0
+    max_keepers: 1
+    taxi_slots: 0
+  note: 'Rules governing in-season actions. waiver_type selects the claim mechanism: under rolling_priority
+    a successful claim costs queue position, not currency, so waiver_budget is inert.'
+  waivers:
+    type_code: 0
+    type: rolling_priority
+    budget: 100
+    budget_is_active: false
+    day_of_week_code: 2
+    clear_days: 2
+    daily_waivers: false
+    daily_waivers_hour: 0
+  trades:
+    enabled: true
+    deadline_week: 11
+    review_days: 2
+    draft_pick_trading: false
+  reserve:
+    slots: 1
+    allows:
+      reserve_allow_out: false
+      reserve_allow_doubtful: false
+      reserve_allow_na: false
+      reserve_allow_sus: false
+      reserve_allow_cov: false
+      reserve_allow_dnr: false
+    extra_status_flags_enabled: false
+  roster_moves:
+    adds_disabled: false
+    offseason_adds: false
+    max_in_game_subs: 0
+    bench_locked: false
+  playoffs:
+    week_start: 15
+    teams: 6
+    type_code: 0
+    round_type_code: 0
+    seed_type_code: 0
 agents:
 - roster_id: 1
   user_id: '1260844862459105280'
   username: mandomango
   team_name: bears country let's ride
   occupied: true
-  keepers: []
+  keepers: null
 - roster_id: 2
   user_id: '1400880093110239232'
   username: Unranked0283
   team_name: Git Blame Copilot
   occupied: true
-  keepers: []
+  keepers: null
 - roster_id: 3
   user_id: '1400886965527703552'
   username: krishuu
-  team_name: Faithful to the ER
+  team_name: (B)rock Bottom
   occupied: true
-  keepers: []
+  keepers: null
 - roster_id: 4
   user_id: '1400888101110329344'
   username: LCLCLCLCLC
   team_name: Josh Allen Bandwagon
   occupied: true
-  keepers: []
+  keepers: null
 - roster_id: 5
   user_id: '1286010516619137024'
   username: fmmg19
   team_name: Gramachamp
   occupied: true
-  keepers: []
+  keepers: null
 - roster_id: 6
   user_id: '1400905871319445504'
   username: Tim17283
   team_name: TeamTimTeam
   occupied: true
-  keepers: []
+  keepers: null
 - roster_id: 7
   user_id: '1401238258561617920'
   username: elguapo305
   team_name: null
   occupied: true
-  keepers: []
+  keepers: null
 - roster_id: 8
   user_id: '1401254035146694656'
   username: NFLRookie10
   team_name: null
   occupied: true
-  keepers: []
+  keepers: null
 - roster_id: 9
   user_id: '1401272972068593664'
   username: PhantomHawk
   team_name: null
   occupied: true
-  keepers: []
+  keepers: null
 - roster_id: 10
   user_id: '1401318295080050688'
   username: virenP80
   team_name: null
   occupied: true
-  keepers: []
+  keepers: null
 my_team:
   username: Unranked0283
   user_id: '1400880093110239232'

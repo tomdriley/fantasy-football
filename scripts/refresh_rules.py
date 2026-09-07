@@ -13,6 +13,7 @@ import argparse
 import collections
 import datetime
 import json
+import os
 import pathlib
 import sys
 import urllib.request
@@ -27,8 +28,85 @@ BASE = "https://api.sleeper.app/v1"
 
 
 def get(url):
-    with urllib.request.urlopen(url, timeout=60) as r:
+    req = urllib.request.Request(url, headers={"User-Agent": "ffopt/0.1 (personal fantasy tool)"})
+    with urllib.request.urlopen(req, timeout=60) as r:
         return json.load(r)
+
+
+#: Sleeper's waiver_type encoding. Only 0 is exercised by this league, but the
+#: others are named so a mis-set league is loud rather than silently mishandled:
+#: a FAAB league needs a bidding policy, not a priority-queue one.
+WAIVER_TYPES = {0: "rolling_priority", 1: "reverse_standings", 2: "faab"}
+
+# Additional status flags; a missing PUP flag is not evidence about PUP eligibility.
+RESERVE_FLAGS = (
+    "reserve_allow_out", "reserve_allow_doubtful", "reserve_allow_na",
+    "reserve_allow_sus", "reserve_allow_cov", "reserve_allow_dnr",
+)
+
+
+def _in_season(lset: dict) -> dict:
+    """In-season action rules: what may be done, when, and at what cost.
+
+    Separate from `season_structure` (the calendar) because these describe the
+    *action space* rather than the shape of the season. Every value is read from
+    the API; nothing here is hand-typed.
+    """
+    waiver_type = lset.get("waiver_type")
+    budget = lset.get("waiver_budget")
+    return {
+        "raw_settings": {
+            key: lset.get(key) for key in (
+                "waiver_type", "waiver_budget", "waiver_day_of_week",
+                "waiver_clear_days", "daily_waivers", "daily_waivers_hour",
+                "daily_waivers_days", "waiver_bid_min", "disable_trades",
+                "trade_deadline", "trade_review_days", "pick_trading",
+                "reserve_slots", *RESERVE_FLAGS, "disable_adds", "bench_lock",
+                "max_subs", "playoff_week_start", "playoff_teams",
+                "playoff_type", "playoff_round_type", "playoff_seed_type",
+                "league_average_match", "max_keepers", "taxi_slots",
+            )
+        },
+        "note": (
+            "Rules governing in-season actions. waiver_type selects the claim "
+            "mechanism: under rolling_priority a successful claim costs queue "
+            "position, not currency, so waiver_budget is inert."
+        ),
+        "waivers": {
+            "type_code": waiver_type,
+            "type": WAIVER_TYPES.get(waiver_type, "unknown"),
+            "budget": budget,
+            "budget_is_active": waiver_type == 2,
+            "day_of_week_code": lset.get("waiver_day_of_week"),
+            "clear_days": lset.get("waiver_clear_days"),
+            "daily_waivers": bool(lset.get("daily_waivers")),
+            "daily_waivers_hour": lset.get("daily_waivers_hour"),
+        },
+        "trades": {
+            "enabled": not lset.get("disable_trades"),
+            "deadline_week": lset.get("trade_deadline"),
+            "review_days": lset.get("trade_review_days"),
+            "draft_pick_trading": bool(lset.get("pick_trading")),
+        },
+        "reserve": {
+            "slots": lset.get("reserve_slots"),
+            "allows": {f: bool(lset.get(f)) for f in RESERVE_FLAGS},
+            "extra_status_flags_enabled": any(lset.get(f) for f in RESERVE_FLAGS),
+        },
+        "roster_moves": {
+            "adds_disabled": bool(lset.get("disable_adds")),
+            "offseason_adds": bool(lset.get("offseason_adds")),
+            "max_in_game_subs": lset.get("max_subs"),
+            "bench_locked": bool(lset.get("bench_lock")),
+        },
+        "playoffs": {
+            "week_start": lset.get("playoff_week_start"),
+            "teams": lset.get("playoff_teams"),
+            "type_code": lset.get("playoff_type"),
+            "round_type_code": lset.get("playoff_round_type"),
+            "seed_type_code": lset.get("playoff_seed_type"),
+        },
+    }
 
 
 def build(league_id: str) -> dict:
@@ -133,6 +211,7 @@ def build(league_id: str) -> dict:
             "max_keepers": lset.get("max_keepers"),
             "taxi_slots": lset.get("taxi_slots"),
         },
+        "in_season": _in_season(lset),
         "agents": agents,
         "my_team": {
             "username": "Unranked0283",
@@ -150,7 +229,13 @@ def summarise(doc: dict) -> dict:
         "picks_made": doc["draft"]["picks_made_so_far"],
         "scoring_weights": doc["scoring_weights"],
         "starting_slots": doc["roster_constraints"]["starting_slots"],
+        "roster_configuration": doc["roster_constraints"],
         "keepers": [a["roster_id"] for a in doc["agents"] if a.get("keepers")],
+        # A commissioner can change these mid-season. Each one silently
+        # invalidates a different policy: the claim mechanism, the trade
+        # window, or which designations free an IR slot.
+        "in_season": doc.get("in_season"),
+        "league_status": doc["league"]["status"],
     }
 
 
@@ -179,10 +264,16 @@ def main() -> int:
         print("\n--check given; file not modified")
         return 1
 
-    with open(path, "w") as f:
-        f.write("# Generated file - do not hand-edit. "
-                "Regenerate with scripts/refresh_rules.py.\n")
-        yaml.safe_dump(fresh, f, sort_keys=False, default_flow_style=False, width=100)
+    temporary = path.with_suffix(f".{os.getpid()}.tmp")
+    try:
+        with open(temporary, "w") as f:
+            f.write("# Generated file - do not hand-edit. "
+                    "Regenerate with scripts/refresh_rules.py.\n")
+            yaml.safe_dump(fresh, f, sort_keys=False, default_flow_style=False, width=100)
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
     print(f"\nrewrote {path}")
     return 0
 

@@ -58,6 +58,13 @@ class LeagueConfig:
         return dict(self.raw["roster_constraints"]["starting_slots"])
 
     @property
+    def starting_positions(self) -> list[str]:
+        return [
+            s for s in self.raw["roster_constraints"]["roster_positions_ordered"]
+            if s != "BN"
+        ]
+
+    @property
     def dedicated_slots(self) -> dict[str, int]:
         """Starting slots excluding the wildcard FLEX slots."""
         return {k: v for k, v in self.starting_slots.items() if k != FLEX_SLOT}
@@ -146,9 +153,84 @@ class LeagueConfig:
     def draft_order_assigned(self) -> bool:
         return bool(self.raw["draft"].get("draft_order_assigned"))
 
+    # -- in-season ------------------------------------------------------
+    @property
+    def in_season(self) -> dict[str, Any]:
+        """Rules governing in-season actions, as captured from the API.
+
+        Absent from rules files generated before the season started, so callers
+        get an empty mapping rather than a KeyError.
+        """
+        return self.raw.get("in_season") or {}
+
+    @property
+    def is_in_season(self) -> bool:
+        return self.raw["league"].get("status") == "in_season"
+
+    @property
+    def waiver_type(self) -> str:
+        """'rolling_priority' | 'reverse_standings' | 'faab' | 'unknown'."""
+        return (self.in_season.get("waivers") or {}).get("type", "unknown")
+
+    @property
+    def waiver_budget_is_active(self) -> bool:
+        """True only under FAAB. A non-zero budget is inert otherwise.
+
+        The league exposes waiver_budget: 100 while running rolling priority,
+        which reads as a spendable resource and is not one.
+        """
+        return bool((self.in_season.get("waivers") or {}).get("budget_is_active"))
+
+    @property
+    def waiver_clear_days(self) -> int | None:
+        return (self.in_season.get("waivers") or {}).get("clear_days")
+
+    @property
+    def trades_enabled(self) -> bool:
+        return bool((self.in_season.get("trades") or {}).get("enabled"))
+
+    @property
+    def trade_deadline_week(self) -> int | None:
+        return (self.in_season.get("trades") or {}).get("deadline_week")
+
+    @property
+    def draft_pick_trading(self) -> bool:
+        return bool((self.in_season.get("trades") or {}).get("draft_pick_trading"))
+
+    @property
+    def reserve_slots(self) -> int:
+        return (self.in_season.get("reserve") or {}).get("slots") or 0
+
+    @property
+    def reserve_extra_status_flags_enabled(self) -> bool:
+        return bool((self.in_season.get("reserve") or {}).get("extra_status_flags_enabled"))
+
+    @property
+    def playoff_week_start(self) -> int | None:
+        return self.raw["season_structure"].get("playoff_week_start")
+
+    @property
+    def playoff_teams(self) -> int | None:
+        return self.raw["season_structure"].get("playoff_teams")
+
+    @property
+    def regular_season_weeks(self) -> int:
+        """Last week that counts toward seeding, i.e. playoff_week_start - 1."""
+        start = self.playoff_week_start
+        return (start - 1) if start else 0
+
+    def is_playoff_week(self, week: int) -> bool:
+        start = self.playoff_week_start
+        return bool(start and week >= start)
+
 
 @functools.lru_cache(maxsize=1)
 def load(path: str | pathlib.Path | None = None) -> LeagueConfig:
+    return read(path)
+
+
+def read(path: str | pathlib.Path | None = None) -> LeagueConfig:
+    """Read uncached rules for long-lived service operations."""
     p = pathlib.Path(path) if path else RULES_PATH
     with open(p) as f:
         return LeagueConfig(yaml.safe_load(f))

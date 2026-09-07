@@ -295,10 +295,30 @@ The largest disagreements against consensus are diagnostic, and two of them reve
 
 ## 9. Open items
 
-- **Draft order is unassigned.** All deliverables must be parameterised by seat.
+- **Draft completed:** the refreshed rules now record 150 picks and `in_season`.
+  Draft-day ordering and the valuation tables above are historical, not live
+  weekly recommendations.
 - **Forecasts are single-source.** Market consensus (ADP) aggregates far more independent
   information and should be blended in rather than trusting one forecast provider.
 - **Bye weeks:** with only 5 zero-scoring bench slots, avoid concentrating guaranteed-zero weeks
   among starters of the same type.
 - Replacement levels above are computed from preseason forecasts and should be recomputed as the
   board evolves during the draft — they are not static.
+
+## 10. In-season rule capture
+
+The generated YAML now also records waiver type, raw processing-day code,
+post-drop delay, trade deadline/review, reserve flags, add restrictions, bench
+lock, substitutions and playoff settings. The weekly advisor checks these
+against live settings and refuses to advise through unacknowledged drift.
+
+This capture has rolling priority (`waiver_type: 0`), a two-day post-drop delay,
+trades through week 11 with two review days, and no draft-pick trading. The
+published budget does not activate FAAB by itself. All captured optional IR
+status flags are disabled; confirm individual eligibility in Sleeper rather
+than interpreting absent fields as a complete eligibility specification.
+
+Unowned players may still be on waivers, and the 24-hour hold exception affects
+recent free-agent drops. The app's countdown is authoritative for submissions.
+See [the in-season operating guide](./in-season-strategy-plan.md) and its official
+Sleeper references.

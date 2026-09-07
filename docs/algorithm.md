@@ -1,5 +1,10 @@
 # The Algorithm
 
+This document describes the **draft** engine. Its results are not evidence of an
+in-season advantage. The [in-season advisor and evidence review](./in-season-strategy-plan.md)
+document separate weekly objectives, original-slot locks, pickup constraints,
+and corrections to the initial streaming experiments.
+
 A precise specification of the decision engine, written to be **audited and attacked**. Where the
 implementation rests on an assumption, this document says so and states how much the assumption is
 worth in points.

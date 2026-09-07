@@ -1,13 +1,51 @@
-# Git Blame Copilot — fantasy draft optimizer
+# Git Blame Copilot — fantasy draft and in-season research
 
-Tooling for a 10-team snake draft, treated as a sequential resource-allocation
-problem rather than a forecasting one.
+Draft tooling, a manager-facing in-season assistant, and a reproducible research
+archive for the configured Sleeper league.
+
+## Web demo and REST API
+
+The in-season app uses **React + Material UI** over **FastAPI + Uvicorn**, sharing
+the engine, SQLite evidence archive and CLI operations. My week prioritizes
+freshness, the next deadline and what needs attention. Past advice and research
+are separate destinations, following the [documented product design](docs/in-season-product-design.md).
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements-dev.txt -c requirements.lock
+npm --prefix web/season ci
+npm --prefix web/season run build
+.venv/bin/python scripts/serve_api.py
+```
+
+Open **http://127.0.0.1:8787/** and choose **Update advice**. Make any changes in
+Sleeper, then update again to check your lineup. Old advice is labeled as
+reference only. Optional pickups are collapsed; experiments and technical
+details live under **More**. Updates use durable background jobs.
+API schema: http://127.0.0.1:8787/api/v1/openapi.json.
+
+On Debian images without `ensurepip`, the tested bootstrap alternative is:
+
+```sh
+python3 -m venv --without-pip .venv
+python3 -m pip --python .venv/bin/python install -r requirements-dev.txt -c requirements.lock
+```
+
+The default is a **loopback-only demo**, not a public deployment. Remote binding
+requires `FFOPT_API_TOKEN` and explicit `--allowed-host` values; TLS and
+production identity/deployment controls are still required. The UI keeps an
+entered token in memory only. No Sleeper transactions are submitted.
+
+See [REST contracts and scaling limits](docs/architecture.md#rest-service-and-demo)
+for the single-host SQLite boundary and migration path.
 
 ## Documentation
 
 | Document | Question it answers |
 |---|---|
 | [**Draft day**](docs/draft-day.md) | **Read this on the day.** What to run, what to click, what to do when something breaks |
+| [**In-season decisions**](docs/in-season-strategy-plan.md) | Weekly guidance, locks, pickups, external data, research limitations and the human checklist |
+| [**In-season product design**](docs/in-season-product-design.md) | Manager-first workflows, progressive disclosure, safety states and acceptance criteria |
 | [**How this works**](docs/how-this-works.md) | What the game is and what the software does, assuming no football knowledge |
 | [Algorithm](docs/algorithm.md) | **The objective function and decision rule, as equations.** Written to be audited: every parameter's source, every approximation ranked by how much it is distrusted |
 | [Strategy plan](docs/draft-strategy-plan.md) | **Why** this approach, and why not machine-learned projections |
@@ -50,7 +88,58 @@ correctness go to the algorithm doc; for draft-day mechanics, the product design
 
 ## Running
 
-Requires Python 3 with `pyyaml`. No other dependencies.
+The core CLI requires Python 3.10+, `pyyaml`, and the system timezone database.
+The web service adds FastAPI/Uvicorn; API tests add HTTPX. Direct dependencies are
+pinned in `requirements.txt` and `requirements-dev.txt`.
+`requirements.lock` records the tested transitive versions as installation constraints.
+The frontend build and its built-in Node tests require Node 24+ and npm 11+.
+`npm --prefix web/season run build` includes TypeScript checking;
+`npm --prefix web/season test` runs the frontend behavior tests. Node is not
+needed to serve an already-built app.
+
+### During the season
+
+```sh
+python3 scripts/refresh_rules.py
+python3 scripts/week.py --refresh
+python3 scripts/week.py --refresh --calendar data/lineup-reminders.ics
+python3 scripts/week.py --score-week 1     # after the week's games finish
+```
+
+The briefing preserves locked slots, shows exact lineup edits, compares legal
+DEF/K add/drop options, and records decisions locally. **Nothing is submitted to
+Sleeper.** Import the exported calendar to enable alarms; no background service
+is installed. Confirm injury status and each player's waiver countdown in the
+app before acting.
+
+In-season gains and championship odds have **not** been validated. Earlier
+streaming gain estimates were withdrawn after a hindsight-bias audit; see the
+[evidence corrections](docs/in-season-strategy-plan.md#1-what-changed-during-implementation).
+Optional research commands and assumption-dependent trade/waiver tools are
+documented in the [operating guide](docs/in-season-strategy-plan.md#optional-scenario-tools).
+
+### Capture evidence and replay offline
+
+```sh
+python3 scripts/snapshots.py collect
+python3 scripts/snapshots.py list
+python3 scripts/snapshots.py replay SNAPSHOT_ID --min-pickup-gain 2
+python3 scripts/week.py --capture --refresh
+python3 scripts/week.py --snapshot SNAPSHOT_ID
+python3 scripts/snapshots.py backup /path/to/backup.sqlite3
+```
+
+The local archive stores raw HTTP bodies, original receipt/cache metadata,
+captured rules and explicit failures. Replay uses the archived time and inputs,
+not today's mutable cache. The optional pickup threshold is an **uncalibrated
+shadow policy**, not a promoted strategy.
+
+`collect` is a one-shot command suitable for a future scheduler; it does not
+install a daemon. The archive is gitignored and needs a durable local disk and
+backups. See [archive operation and limitations](docs/in-season-strategy-plan.md#7-capture-and-replay-backend)
+and [frontend/hosting options](docs/architecture.md#in-season-hosting-direction).
+
+### Draft commands
 
 ```sh
 python3 scripts/serve.py                      # web interface (recommended)
@@ -60,11 +149,11 @@ python3 scripts/make_sheet.py                 # printable draft sheet (paper bac
 python3 scripts/draft.py                      # terminal advisor
 python3 scripts/draft.py --manual --seat 5    # terminal, enter picks by hand
 
-python3 -m unittest discover -s tests         # ~200 tests, ~7s
-FFOPT_GOLDEN=1 python3 -m unittest discover -s tests   # + engine regression (~70s)
+.venv/bin/python -m unittest discover -s tests
+FFOPT_GOLDEN=1 .venv/bin/python -m unittest discover -s tests   # + optional engine regression
 ```
 
-### The web interface
+### Draft-day web interface (legacy)
 
 `scripts/serve.py` opens a browser interface at `http://127.0.0.1:8777`. It has
 three modes:

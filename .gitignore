@@ -190,3 +190,23 @@ data/manual-board.json
 
 # Web session state (regenerated per draft)
 data/session.json
+
+# Local in-season decision journal and reminder exports
+data/decisions.jsonl
+data/*.ics
+
+# Append-only evidence archive (back up through SQLite, including live WAL state)
+data/archive.sqlite3
+data/archive.sqlite3-wal
+data/archive.sqlite3-shm
+
+# Mutable local web-service job queue and worker lock
+data/service.sqlite3
+data/service.sqlite3-wal
+data/service.sqlite3-shm
+data/service.worker.lock
+
+# React frontend dependencies and generated bundles
+web/season/node_modules/
+web/season/dist/
+web/season/*.tsbuildinfo
