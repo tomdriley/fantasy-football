@@ -20,6 +20,8 @@ class TestBriefing(unittest.TestCase):
         self.assertIn("one-week gains, not proven edges", output)
         self.assertIn("confirm Free Agent vs Waiver", output)
         self.assertIn("No transactions submitted", output)
+        self.assertIn("HOLD OPTIONAL MOVES", output)
+        self.assertIn("comparisons do not approve an add/drop", output)
 
     def test_uses_daylight_saving_zone_in_winter(self):
         january = datetime.datetime(2027, 1, 1, 18, tzinfo=datetime.timezone.utc)

@@ -8,8 +8,8 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import { advicePath } from './api.ts';
 import { useClock, useOperations, useRemote } from './hooks.tsx';
 import { activeJob, operationBlocked } from './operations.ts';
-import { ageLabel, availabilityChecks, confirmedAdvice, dateTime, displayedActions, failedUpdateAfterAdvice } from './presentation.ts';
-import { Evidence, Lineup, LoadError, Loading, Pickups, SleeperHandoff } from './components.tsx';
+import { ageLabel, availabilityChecks, confirmedAdvice, dateTime, displayedActions, displayedDecisions, failedUpdateAfterAdvice } from './presentation.ts';
+import { Evidence, Lineup, LoadError, Loading, Pickups, Recommendations, RepairInstructions, SleeperHandoff } from './components.tsx';
 import type { Advice } from './types.ts';
 
 export function Week() {
@@ -23,7 +23,7 @@ export function Week() {
     || Boolean(state.tracking && !state.jobs.some(job => job.id === state.tracking && job.kind === 'evaluate'));
   const pending = state.pending?.kind === 'collect' && !state.submitting;
   const updating = collecting || Boolean(state.pending?.kind === 'collect');
-  const usable = Boolean(advice && !remote.error && !updating
+  const usable = Boolean(advice?.decisions && !remote.error && !updating
     && confirmedAdvice(advice, elapsed, remote.dataRevision, state.adviceRevision, state.jobs));
   const latestFailed = Boolean(advice && (failedUpdateAfterAdvice(advice, state.jobs)
     || (advice.latest_attempt && !['complete', 'succeeded', 'running', 'queued'].includes(advice.latest_attempt.status))));
@@ -34,6 +34,7 @@ export function Week() {
     : remote.error ? 'Advice could not be checked'
     : remote.loading && advice && !usable ? 'Checking saved advice…'
     : !advice ? 'Checking your advice…'
+    : !advice.decisions ? 'Decision recommendation unavailable'
     : latestFailed ? 'Your last update failed'
     : !advice.snapshot ? 'Get your first advice'
     : usable ? 'Advice is recent'
@@ -45,6 +46,7 @@ export function Week() {
     : remote.error ? 'Use Update advice to get fresh information. Do not act on an unchecked report.'
     : remote.loading && advice && !usable ? 'Confirming that the saved report is still usable. This check does not start a new update.'
     : !advice ? 'Reading the latest saved update.'
+    : !advice.decisions ? 'This report has no act-or-hold recommendation. Update advice before making changes.'
     : latestFailed ? 'No new usable advice was obtained. Any previous lineup below is reference only.'
     : !advice.snapshot ? 'Update advice to see your lineup and anything that needs attention.'
     : advice.freshness.usable && !usable ? 'The saved information is no longer fresh enough. Update before making changes.'
@@ -93,34 +95,22 @@ export function Week() {
     {!advice && remote.loading && <Loading />}
 
     {advice && <>
-      <Paper variant="outlined" component="section" sx={{ p: 2 }} aria-labelledby="deadline-title">
-        <Typography variant="h2" id="deadline-title">
-          {usable ? 'Next lineup deadline' : 'Lineup deadline · verify with an update'}
-        </Typography>
-        {advice.next_deadline ? <>
-          <Typography fontWeight={600} variant="body2" mt={0.75}>{dateTime(advice.next_deadline.at_ms, true)}</Typography>
-          <Typography variant="body2" color="text.secondary">
-            {advice.next_deadline.players.map(player => player.name).join(', ')}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Save changes before this time; it is the lock deadline, not the time to start checking.
-          </Typography>
-        </> : <Typography variant="body2" color="text.secondary" mt={0.75}>
-          {advice.snapshot ? 'No upcoming lineup deadline is available in this report. Check kickoff times in Sleeper.' : 'Update advice to load your lineup deadlines.'}
-        </Typography>}
-      </Paper>
-
       <Box component="section" aria-labelledby="attention-title">
-        <Typography variant="h2" id="attention-title" mb={1}>What needs attention</Typography>
+        <Typography variant="h2" id="attention-title" mb={1}>What to do now</Typography>
         {usable ? <Attention advice={advice} elapsed={elapsed} /> : <Alert severity={latestFailed ? 'error' : 'info'}>
           {latestFailed ? 'Update again before making lineup decisions.' : 'Update first. Saved suggestions are not live instructions.'}
           {!!advice.summary.missing_slots.length && ` The last report had unfilled slots: ${advice.summary.missing_slots.join(', ')}.`}
         </Alert>}
-        <SleeperHandoff live={usable} />
+        <SleeperHandoff live={usable} actionRequired={advice.decisions?.lineup.action === 'change'
+          || advice.decisions?.lineup.action === 'repair' || advice.decisions?.roster.action === 'repair'
+          || advice.decisions?.roster.action === 'change'} />
       </Box>
 
+      {!usable && <ReviewDeadline advice={advice} elapsed={elapsed} live={false} />}
+
       {advice.snapshot && <Lineup slots={advice.lineup} total={advice.summary.projected_total} live={usable} />}
-      {usable && <Pickups pickups={advice.pickups} />}
+      {usable && <Pickups pickups={advice.pickups.filter(p => advice.repair?.status !== 'proposed'
+        || p.add.player_id !== advice.repair.add?.player_id)} decision={advice.decisions?.roster} />}
       <Evidence advice={advice} />
     </>}
     {!advice && !remote.loading && connected && !remote.error && <Alert severity="info">No advice is available yet. Use Update advice to get started.</Alert>}
@@ -134,8 +124,10 @@ function Attention({ advice, elapsed }: { advice: Advice; elapsed: number }) {
   const checks = availabilityChecks(advice.injuries, advice.now_ms + elapsed);
   const due = checks.some(check => check.state === 'now');
   const upcoming = checks.find(check => check.state === 'upcoming');
+  const decisions = displayedDecisions(advice, elapsed);
   return <Stack spacing={1.5}>
-    <Typography variant="body2">{advice.summary.headline}</Typography>
+    {decisions && <Recommendations decisions={decisions} />}
+    {advice.repair && <RepairInstructions repair={advice.repair} />}
     {!!advice.summary.missing_slots.length && <Alert severity="warning">
       Lineup incomplete: {advice.summary.missing_slots.join(', ')}. Review these slots in Sleeper.
     </Alert>}
@@ -154,6 +146,7 @@ function Attention({ advice, elapsed }: { advice: Advice; elapsed: number }) {
         </ListItem>)}
       </List>
     </Paper>}
+    <ReviewDeadline advice={advice} elapsed={elapsed} live />
     {(advice.injuries.length > 0 || availabilityActions.length > 0) && <Accordion disableGutters variant="outlined">
       <AccordionSummary expandIcon={<ExpandMoreIcon />} aria-controls="injury-details" id="injury-summary">
         <Box>
@@ -206,4 +199,33 @@ function Attention({ advice, elapsed }: { advice: Advice; elapsed: number }) {
       </AccordionDetails>
     </Accordion>}
   </Stack>;
+}
+
+function ReviewDeadline({ advice, elapsed, live }: { advice: Advice; elapsed: number; live: boolean }) {
+  const review = live ? advice.next_review_at_ms : null;
+  return <Paper variant="outlined" component="section" sx={{ p: 2 }} aria-labelledby="deadline-title">
+    <Typography variant="h2" id="deadline-title">
+      {review !== null && review !== undefined
+        ? 'Next advice check' : live ? 'Next lineup deadline' : 'Lineup deadline · verify with an update'}
+    </Typography>
+    {review !== null && review !== undefined && <>
+      <Typography fontWeight={600} variant="body2" mt={0.75}>
+        {review <= advice.now_ms + elapsed ? 'Update advice now' : dateTime(review, true)}
+      </Typography>
+      <Typography variant="body2" color="text.secondary">
+        Recheck before the first remaining roster lock, including bench players. Earlier locks can remove replacement options.
+      </Typography>
+    </>}
+    {advice.next_deadline ? <>
+      <Typography fontWeight={600} variant="body2" mt={0.75}>Lineup lock: {dateTime(advice.next_deadline.at_ms, true)}</Typography>
+      <Typography variant="body2" color="text.secondary">
+        {advice.next_deadline.players.map(player => player.name).join(', ')}
+      </Typography>
+      <Typography variant="caption" color="text.secondary">
+        Save any recommended changes before the lock. If player status changes earlier, update advice then.
+      </Typography>
+    </> : <Typography variant="body2" color="text.secondary" mt={0.75}>
+      {advice.snapshot ? 'No upcoming lineup deadline is available in this report. Check kickoff times in Sleeper.' : 'Update advice to load your lineup deadlines.'}
+    </Typography>}
+  </Paper>;
 }

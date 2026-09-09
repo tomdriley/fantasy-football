@@ -107,15 +107,18 @@ def render(
     elif not quiet:
         out += ["", "No changes to the current lineup under these projections."]
     if streams:
-        out += ["", "PICKUP OPTIONS -- projected one-week gains, not proven edges"]
+        out += [
+            "", "HOLD OPTIONAL MOVES -- these comparisons do not approve an add/drop.",
+            "PICKUP COMPARISONS -- projected one-week gains, not proven edges",
+        ]
         for stream in streams:
-            drop = f"drop {stream.drop.name}" if stream.drop else "use the empty active roster slot"
+            drop = f"compared with {stream.drop.name}" if stream.drop else "compared with an empty active roster slot"
             out += [
-                f"  {stream.position}: add {stream.add.name}; {drop}; projected gain {stream.gain:+.2f}",
+                f"  {stream.position}: {stream.add.name}; {drop}; projected gain {stream.gain:+.2f}",
                 f"    {stream.acquisition}",
                 f"    {stream.warning}",
             ]
-        out.append("  Do not spend waiver priority for a tiny upgrade without considering future weeks.")
+        out.append("  Use My week (/api/v1/advice) for freshness-checked decisions and required lineup repairs.")
     elif not quiet:
         out += ["", "No legal positive DEF/K upgrade found in this snapshot."]
     if not quiet or changes:

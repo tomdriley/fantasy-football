@@ -27,6 +27,7 @@ class TestManagerAdvice(ArchiveCase):
         self.assertFalse(result["freshness"]["usable"])
         self.assertEqual(result["lineup"], [])
         self.assertIsNone(result["summary"]["projected_total"])
+        self.assertEqual(result["decisions"]["roster"]["action"], "update")
 
     def test_current_uses_latest_baseline_not_research_selection(self):
         first = self.saved_advice()
@@ -38,9 +39,12 @@ class TestManagerAdvice(ArchiveCase):
         self.assertEqual(view["snapshot"]["id"], second)
         self.assertTrue(view["freshness"]["usable"])
         self.assertEqual(len(view["pickups"]), 1)
+        self.assertEqual(view["decisions"]["roster"]["action"], "hold")
+        self.assertEqual(view["decisions"]["roster"]["basis"], "conservative_default")
         historical = self.service.advice(first)
         self.assertEqual(historical["mode"], "historical")
         self.assertFalse(historical["freshness"]["usable"])
+        self.assertEqual(historical["decisions"]["roster"]["action"], "update")
         evaluate_snapshot(self.store, first, 2)
         self.assertEqual(self.service.advice()["snapshot"]["id"], second)
 
@@ -51,6 +55,7 @@ class TestManagerAdvice(ArchiveCase):
         self.assertEqual(view["freshness"]["state"], "stale")
         self.assertFalse(view["freshness"]["usable"])
         self.assertTrue(all(a["blocked"] for a in view["actions"]))
+        self.assertTrue(all(d["blocked"] for d in view["decisions"].values()))
         self.assertEqual(view["summary"]["headline"], "Update advice before acting")
 
     def test_recent_capture_with_old_reused_references_is_not_recent_advice(self):
@@ -149,7 +154,67 @@ class TestManagerAdvice(ArchiveCase):
         self.assertEqual(view["summary"]["lineup_change_count"], 0)
         self.assertEqual(view["injuries"][0]["player_id"], "p0")
         self.assertEqual(view["lineup"][0]["change"], "same")
+        self.assertEqual(view["decisions"]["lineup"]["action"], "hold")
         self.assertFalse(any("Bench" in text for a in view["actions"] for text in a["instructions"]))
+
+    def test_known_out_with_rostered_replacement_is_a_change_not_blanket_hold_or_repair(self):
+        self.transport.players["p0"]["injury_status"] = "Out"
+        self.transport.players["backup-qb"] = {
+            "position": "QB", "fantasy_positions": ["QB"], "team": "DET",
+            "full_name": "Backup QB", "injury_status": None,
+        }
+        self.transport.projections.append({"player_id": "backup-qb", "stats": {"rec": 5}})
+        rosters = self.transport.payloads[f"/v1/league/{self.cfg.league_id}/rosters"]
+        rosters[0]["players"].append("backup-qb")
+        self.saved_advice()
+        view = self.service.advice()
+        self.assertEqual(view["decisions"]["lineup"]["action"], "change")
+        self.assertEqual(view["decisions"]["roster"]["action"], "hold")
+        self.assertEqual(view["lineup"][0]["player_id"], "backup-qb")
+        self.assertTrue(any(
+            "Start Backup QB" in step for action in view["actions"] for step in action["instructions"]
+        ))
+
+    def test_known_out_without_replacement_is_not_all_clear_hold(self):
+        self.transport.players["p0"]["injury_status"] = "Out"
+        self.saved_advice()
+        view = self.service.advice()
+        self.assertIn("QB", view["summary"]["missing_slots"])
+        self.assertEqual(view["decisions"]["roster"]["action"], "repair")
+
+    def test_emergency_pickup_is_named_and_expires_at_its_own_kickoff(self):
+        self.transport.players["p0"]["injury_status"] = "Out"
+        self.transport.players["free-qb"] = {
+            "position": "QB", "fantasy_positions": ["QB"], "team": "SEA",
+            "full_name": "Available QB", "injury_status": None,
+        }
+        self.transport.projections.append({"player_id": "free-qb", "stats": {"rec": 5}})
+        self.transport.payloads[f"/scores/nfl/regular/{self.cfg.season}/1"].append({
+            "game_id": "early", "start_time": EPOCH + 60_000,
+            "metadata": {"home_team": "SEA", "away_team": "ARI"},
+        })
+        self.saved_advice()
+        view = self.service.advice()
+        self.assertEqual(view["repair"]["status"], "proposed")
+        self.assertFalse(view["repair"]["blocked"])
+        self.assertEqual(view["decisions"]["roster"]["title"], "Add Available QB")
+        self.assertEqual(view["freshness"]["valid_until_ms"], EPOCH + 30_000)
+        self.transport.clock += 30_001
+        expired = self.service.advice()
+        self.assertFalse(expired["freshness"]["usable"])
+        self.assertTrue(expired["repair"]["blocked"])
+        self.assertEqual(expired["decisions"]["roster"]["action"], "update")
+        self.transport.clock = EPOCH + 60_001
+        self.assertIn("lock deadline has passed", self.service.advice()["freshness"]["message"])
+
+    def test_locked_out_slot_is_not_presented_as_an_actionable_repair(self):
+        self.transport.players["p0"]["injury_status"] = "Out"
+        self.transport.clock += 25 * 60 * 60_000
+        self.saved_advice()
+        view = self.service.advice()
+        self.assertEqual(view["decisions"]["lineup"]["action"], "hold")
+        self.assertIn("Player 0 already locked", view["decisions"]["lineup"]["reason"])
+        self.assertIsNone(view["repair"])
 
     def test_availability_has_a_check_time_before_the_game_and_a_clear_return_instruction(self):
         self.transport.players["p0"]["injury_status"] = "Questionable"
@@ -160,6 +225,29 @@ class TestManagerAdvice(ArchiveCase):
         self.assertIn("Return about 90 minutes", player["note"])
         self.assertIn("Update advice", player["note"])
         self.assertEqual(view["summary"]["headline"], "No lineup changes suggested right now")
+
+    def test_review_precedes_an_earlier_bench_lock_not_only_the_uncertain_starters_game(self):
+        self.transport.players["p3"]["injury_status"] = "Questionable"
+        self.transport.players["early-bench"] = {
+            "position": "WR", "fantasy_positions": ["WR"], "team": "SEA",
+            "full_name": "Early bench player", "injury_status": None,
+        }
+        self.transport.projections.append({"player_id": "early-bench", "stats": {"rec": 1}})
+        rosters = self.transport.payloads[f"/v1/league/{self.cfg.league_id}/rosters"]
+        rosters[0]["players"].append("early-bench")
+        games = self.transport.payloads[f"/scores/nfl/regular/{self.cfg.season}/1"]
+        games.append({
+            "game_id": "early", "start_time": EPOCH + 6 * 60 * 60_000,
+            "metadata": {"home_team": "SEA", "away_team": "ARI"},
+        })
+        self.saved_advice()
+        view = self.service.advice()
+        self.assertEqual(view["next_review_at_ms"], EPOCH + (6 * 60 - 90) * 60_000)
+        self.assertLess(view["next_review_at_ms"], view["injuries"][0]["check_at_ms"])
+        self.assertEqual(view["next_deadline"]["players"][0]["player_id"], "early-bench")
+        self.transport.clock += 5 * 60 * 60_000
+        self.saved_advice(refresh=True)
+        self.assertEqual(self.service.advice()["decisions"]["lineup"]["action"], "check")
 
     def test_availability_changes_to_check_now_inside_the_pregame_window(self):
         self.transport.players["p0"]["injury_status"] = "Questionable"

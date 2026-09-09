@@ -1,4 +1,4 @@
-import type { Advice, Evaluation, Job, Snapshot } from './types.ts';
+import type { Advice, Evaluation, Job, ManagerDecisions, Snapshot } from './types.ts';
 
 export function adviceUsable(advice: Advice, elapsedMs = 0): boolean {
   if (advice.mode !== 'current' || !advice.freshness.usable
@@ -59,6 +59,23 @@ export function availabilityChecks(injuries: Advice['injuries'], now: number) {
     groups.set(key, group);
   }
   return [...groups.values()].sort((a, b) => (a.checkAt ?? Infinity) - (b.checkAt ?? Infinity));
+}
+
+export function displayedDecisions(advice: Advice, elapsedMs = 0, updating = false): ManagerDecisions | null {
+  if (updating || !advice.decisions || !adviceUsable(advice, elapsedMs)) return null;
+  const now = advice.now_ms + Math.max(0, elapsedMs);
+  const due = (advice.next_review_at_ms !== null && advice.next_review_at_ms !== undefined
+    && advice.next_review_at_ms <= now)
+    || availabilityChecks(advice.injuries, now).some(check => check.state === 'now');
+  if (!due || advice.decisions.lineup.action !== 'hold') return advice.decisions;
+  return {
+    ...advice.decisions,
+    lineup: {
+      ...advice.decisions.lineup, action: 'check',
+      title: 'Keep your starters; check their status now',
+      instruction: 'Keep these starters in. Update advice and check Sleeper now; replace anyone ruled out before kickoff.',
+    },
+  };
 }
 
 export function ageLabel(value: number | null, now: number) {

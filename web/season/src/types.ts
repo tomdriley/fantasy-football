@@ -70,6 +70,27 @@ export type AdviceAction = {
   player_ids: string[];
   blocked: boolean;
 };
+export type ManagerDecision = {
+  action: 'hold' | 'change' | 'check' | 'repair' | 'update';
+  title: string;
+  instruction: string;
+  reason: string;
+  basis: 'forecast_baseline' | 'roster_requirement' | 'conservative_default' | 'data_guard';
+  blocked: boolean;
+};
+export type ManagerDecisions = { lineup: ManagerDecision; roster: ManagerDecision };
+export type LineupRepair = {
+  status: 'proposed' | 'blocked';
+  reason: string;
+  add: (Player & { kickoff_ms?: number | null }) | null;
+  drop: Player | null;
+  gain: number | null;
+  deadline_ms: number | null;
+  missing_before: string[];
+  missing_after: string[];
+  instructions: string[];
+  blocked: boolean;
+};
 export type Advice = {
   mode: 'current' | 'historical';
   now_ms: number;
@@ -91,10 +112,13 @@ export type Advice = {
     valid_until_ms: number | null;
   };
   next_deadline: null | { at_ms: number; players: { player_id: string; name: string }[] };
+  next_review_at_ms?: number | null;
   summary: {
     headline: string; lineup_change_count: number; injury_count: number;
     missing_slots: string[]; projected_total: number | null;
   };
+  decisions?: ManagerDecisions;
+  repair?: LineupRepair | null;
   actions: AdviceAction[];
   lineup: LineupSlot[];
   injuries: {

@@ -1,10 +1,10 @@
-"""Manager-facing read model. Presentation safeguards do not change the policy."""
+"""Manager-facing decisions and freshness guards over the forecast baseline."""
 
 from __future__ import annotations
 
 import copy
 
-from . import config, inseason, lineup
+from . import config, guidance, inseason, lineup, repair
 
 RECENCY_SECONDS = 30 * 60
 AVAILABILITY_CHECK_MINUTES = 90
@@ -40,6 +40,7 @@ def context(cfg: config.LeagueConfig, state: inseason.WeekState) -> dict:
         "players": players, "current_starters": list(state.my_starters),
         "slots": cfg.starting_positions, "rules": rules_signature(cfg),
         "waves": waves,
+        "repair": repair.recommend(state, cfg),
     }
 
 
@@ -68,10 +69,17 @@ def build(
     state = "recent"
     valid_until = as_of + RECENCY_SECONDS * 1000 if complete else None
     waves = ctx.get("waves", [])
+    repair_plan = ctx.get("repair")
     pickup_locks = [
         p["add"]["kickoff_ms"] for p in recommendation.get("pickups", [])
         if p.get("add", {}).get("kickoff_ms") is not None
     ]
+    repair_lock = (
+        repair_plan.get("deadline_ms", repair_plan["add"].get("kickoff_ms"))
+        if repair_plan and repair_plan["status"] == "proposed" and repair_plan.get("add") else None
+    )
+    if repair_lock is not None:
+        pickup_locks.append(repair_lock)
     if complete:
         critical_sources = {"players", "projections", "league", "rosters", "matchups", "scores"}
         receipts = [
@@ -80,6 +88,14 @@ def build(
         ]
         if receipts:
             valid_until = min(valid_until, min(receipts) + RECENCY_SECONDS * 1000)
+        if repair_plan and repair_plan["status"] == "proposed":
+            repair_sources = critical_sources | {"transactions", "previous_transactions"}
+            repair_limits = [
+                o["received_at_ms"] + o["max_age_seconds"] * 1000
+                for o in manifest["observations"] if o["role"] in repair_sources
+            ]
+            if repair_limits:
+                valid_until = min(valid_until, min(repair_limits))
         later_locks = [w["at_ms"] for w in waves if w["at_ms"] > as_of]
         if later_locks:
             valid_until = min(valid_until, min(later_locks))
@@ -105,6 +121,9 @@ def build(
             f"Forecast data is missing for {names}. That is not a reason to bench them. "
             "Update advice or verify the missing data before changing the lineup."
         )
+    elif repair_lock is not None and now_ms >= repair_lock:
+        state = "stale"
+        reasons.append("The replacement plan's lock deadline has passed. Update advice before attempting a repair.")
     elif (
         latest_attempt and latest_attempt["id"] != manifest["id"]
         and (latest_attempt["status"] != "complete" or not latest_attempt.get("analysis_ready", True))
@@ -180,9 +199,18 @@ def build(
     ]
     missing = list(recommendation.get("unfilled", []))
     warnings = list(recommendation.get("warnings", []))
+    deadline_clock = as_of if mode == "historical" and as_of is not None else now_ms
+    next_deadline = next((w for w in waves if w["at_ms"] > deadline_clock), None)
+    next_review_at_ms = (
+        next_deadline["at_ms"] - AVAILABILITY_CHECK_MINUTES * 60_000
+        if injuries and next_deadline else None
+    )
     checks_due = mode == "current" and any(
         p["check_at_ms"] is not None and p["check_at_ms"] <= now_ms < p["kickoff_ms"]
         for p in injuries
+    )
+    checks_due = checks_due or (
+        mode == "current" and next_review_at_ms is not None and next_review_at_ms <= now_ms
     )
     actions = []
     if meaningful_changes or bench_changes or missing:
@@ -218,6 +246,8 @@ def build(
         f"{p['name']}: {p['status']}; verify official inactives" for p in injuries
     }
     data_warnings = [w for w in warnings if w not in injury_warnings]
+    decision_warnings = list(data_warnings)
+    locked_unavailable = []
     for pid in current_set:
         details = players.get(pid, {})
         if details.get("locked_at_capture") and details.get("unavailable"):
@@ -225,6 +255,7 @@ def build(
                 f"{details['name']}: {details['unavailable']}, but already locked. "
                 "That slot cannot be changed; review the remaining open slots."
             )
+            locked_unavailable.append(details["name"])
     for excluded in recommendation.get("excluded", []):
         pid = excluded["player_id"]
         if pid in current_set:
@@ -246,7 +277,6 @@ def build(
         "No lineup changes suggested right now" if injuries else
         "No lineup changes suggested"
     )
-    deadline_clock = as_of if mode == "historical" and as_of is not None else now_ms
     return {
         "mode": mode, "now_ms": now_ms, "league": league,
         "snapshot": {
@@ -264,7 +294,7 @@ def build(
             "reasons": reasons, "threshold_seconds": RECENCY_SECONDS,
             "valid_until_ms": valid_until,
         },
-        "next_deadline": next((w for w in waves if w["at_ms"] > deadline_clock), None),
+        "next_deadline": next_deadline, "next_review_at_ms": next_review_at_ms,
         "summary": {
             "headline": headline, "lineup_change_count": len(meaningful_changes),
             "injury_count": len(injuries), "missing_slots": missing,
@@ -275,6 +305,15 @@ def build(
             ),
         },
         "actions": actions, "lineup": rows, "injuries": injuries,
+        "decisions": guidance.decisions(
+            usable=usable, historical=mode == "historical",
+            changes=bool(meaningful_changes or bench_changes), missing=missing,
+            data_warnings=decision_warnings, flagged=bool(injuries), checks_due=checks_due,
+            repair_plan=repair_plan, locked_unavailable=locked_unavailable,
+        ),
+        "repair": {
+            **repair_plan, "blocked": not usable or repair_plan["status"] == "blocked",
+        } if repair_plan else None,
         "pickups": list(recommendation.get("pickups", [])),
         "warnings": warnings, "sleeper_url": "https://sleeper.com/",
         "evaluation_id": evaluation["id"] if evaluation else None,
@@ -282,5 +321,6 @@ def build(
             "Advice only. Make and save roster changes in Sleeper, then update advice to check them.",
             "Projections are estimates, not guaranteed points or a proven advantage.",
             "Recent retrieval does not prove provider news is current. Verify official inactives.",
+            "Holding optional pickups is a conservative recommendation, not proof that holding is optimal.",
         ],
     }

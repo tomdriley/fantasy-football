@@ -137,6 +137,33 @@ class AdviceSummary(BaseModel):
     projected_total: float | None
 
 
+class ManagerDecision(BaseModel):
+    action: Literal["hold", "change", "check", "repair", "update"]
+    title: str
+    instruction: str
+    reason: str
+    basis: Literal["forecast_baseline", "roster_requirement", "conservative_default", "data_guard"]
+    blocked: bool
+
+
+class ManagerDecisions(BaseModel):
+    lineup: ManagerDecision
+    roster: ManagerDecision
+
+
+class LineupRepair(BaseModel):
+    status: Literal["proposed", "blocked"]
+    reason: str
+    add: dict[str, Any] | None
+    drop: dict[str, Any] | None
+    gain: float | None
+    deadline_ms: int | None
+    missing_before: list[str]
+    missing_after: list[str]
+    instructions: list[str]
+    blocked: bool
+
+
 class AdviceResponse(BaseModel):
     mode: Literal["current", "historical"]
     now_ms: int
@@ -145,7 +172,10 @@ class AdviceResponse(BaseModel):
     latest_attempt: dict[str, Any] | None
     freshness: AdviceFreshness
     next_deadline: dict[str, Any] | None
+    next_review_at_ms: int | None
     summary: AdviceSummary
+    decisions: ManagerDecisions
+    repair: LineupRepair | None
     actions: list[dict[str, Any]]
     lineup: list[dict[str, Any]]
     injuries: list[dict[str, Any]]

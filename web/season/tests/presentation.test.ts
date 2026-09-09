@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { adviceUsable, availabilityChecks, confirmedAdvice, dateTime, displayedActions, historyItems, points, safeEvaluations } from '../src/presentation.ts';
+import { adviceUsable, availabilityChecks, confirmedAdvice, dateTime, displayedActions, displayedDecisions, historyItems, points, safeEvaluations } from '../src/presentation.ts';
 import { clockAnchor } from '../src/timing.ts';
 import type { Advice, Evaluation } from '../src/types.ts';
 
@@ -12,6 +12,12 @@ const recent = (): Advice => ({
   freshness: { state: 'recent', usable: true, age_ms: 100_000, message: 'Recent', reasons: [], threshold_seconds: 1800, valid_until_ms: null },
   next_deadline: { at_ms: 1_100_000, players: [{ player_id: 'p1', name: 'Player' }] },
   summary: { headline: 'Check availability', lineup_change_count: 1, injury_count: 1, missing_slots: [], projected_total: 18 },
+  decisions: {
+    lineup: { action: 'change', title: 'Change lineup', instruction: 'Use the suggested lineup.',
+      reason: 'Current forecasts.', basis: 'forecast_baseline', blocked: false },
+    roster: { action: 'hold', title: 'Keep your roster', instruction: 'Do not add or drop.',
+      reason: 'Future value is not modeled.', basis: 'conservative_default', blocked: false },
+  },
   actions: [{ id: 'a1', kind: 'lineup', priority: 'required', title: 'Suggested change',
     description: 'Check lineup', instructions: ['Make the change in Sleeper'], player_ids: ['p1'], blocked: false }],
   lineup: [{ slot_index: 0, slot: 'WR', label: 'WR', player_id: 'p1', name: 'Player', position: 'WR',
@@ -124,6 +130,45 @@ test('availability uses check-now and locked states rather than telling users to
   assert.equal(availabilityChecks([player], player.check_at_ms)[0].state, 'now');
   assert.equal(availabilityChecks([player], kickoff)[0].state, 'locked');
   assert.equal(availabilityChecks([{ ...player, kickoff_ms: null, check_at_ms: null }], 0)[0].state, 'unknown');
+});
+
+test('explicit decisions retain roster hold while lineup changes are needed', () => {
+  const advice = recent();
+  const decisions = displayedDecisions(advice);
+  assert.equal(decisions?.lineup.action, 'change');
+  assert.equal(decisions?.roster.action, 'hold');
+  assert.equal(decisions?.roster.basis, 'conservative_default');
+  assert.equal(displayedDecisions(advice, 0, true), null);
+  assert.equal(displayedDecisions({ ...advice, mode: 'historical' }), null);
+  assert.equal(displayedDecisions({ ...advice, decisions: undefined }), null);
+  assert.equal(displayedDecisions(advice, 100_000), null, 'kickoff invalidates the decision');
+});
+
+test('a held lineup changes to check-now when the check window opens without mutating saved advice', () => {
+  const advice = recent();
+  assert.ok(advice.decisions);
+  advice.decisions.lineup.action = 'hold';
+  advice.injuries[0].check_at_ms = advice.now_ms + 10_000;
+  assert.equal(displayedDecisions(advice, 9_999)?.lineup.action, 'hold');
+  const due = displayedDecisions(advice, 10_000);
+  assert.equal(due?.lineup.action, 'check');
+  assert.match(due?.lineup.instruction || '', /Keep these starters in/);
+  assert.match(due?.lineup.instruction || '', /replace anyone ruled out/);
+  assert.equal(due?.roster.action, 'hold');
+  assert.equal(advice.decisions.lineup.action, 'hold');
+  advice.decisions.lineup.action = 'repair';
+  assert.equal(displayedDecisions(advice, 10_000)?.lineup.action, 'repair');
+});
+
+test('an earlier roster review becomes due before the uncertain starter inactive window', () => {
+  const advice = recent();
+  assert.ok(advice.decisions);
+  advice.decisions.lineup.action = 'hold';
+  advice.injuries[0].check_at_ms = advice.now_ms + 50_000;
+  advice.next_review_at_ms = advice.now_ms + 10_000;
+  assert.equal(displayedDecisions(advice, 9_999)?.lineup.action, 'hold');
+  assert.equal(displayedDecisions(advice, 10_000)?.lineup.action, 'check');
+  assert.equal(availabilityChecks(advice.injuries, advice.now_ms + 10_000)[0].state, 'upcoming');
 });
 
 test('research results from an old selection cannot enter a different selected report', () => {

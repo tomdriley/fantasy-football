@@ -5,7 +5,7 @@ import {
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import type { Advice, LineupSlot, Stream } from './types.ts';
+import type { Advice, LineupRepair, LineupSlot, ManagerDecision, ManagerDecisions, Stream } from './types.ts';
 import { dateTime, points, signedPoints } from './presentation.ts';
 
 export function Loading() {
@@ -75,31 +75,77 @@ export function Lineup({ slots, total, live = false, historical = false }: {
   </Box>;
 }
 
-export function Pickups({ pickups, historical = false }: { pickups: Stream[]; historical?: boolean }) {
+export function Recommendations({ decisions }: { decisions: ManagerDecisions }) {
+  const combined = decisions.lineup.action === 'repair' && decisions.roster.action === 'repair'
+    && decisions.lineup.title === decisions.roster.title
+    && decisions.lineup.instruction === decisions.roster.instruction
+    && decisions.lineup.reason === decisions.roster.reason;
+  const items = combined ? [['Team', decisions.lineup] as const]
+    : [['Lineup', decisions.lineup] as const, ['Roster', decisions.roster] as const];
+  const labels = { hold: 'Hold', change: 'Act', check: 'Check now', repair: 'Action needed', update: 'Update first' };
+  return <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5}>
+    {items.map(([area, decision]) => <Paper key={area} variant="outlined" component="section"
+      aria-label={`${area} recommendation`} sx={{ p: 2, flex: 1 }}>
+      <Stack direction="row" gap={1} alignItems="center" mb={1}>
+        <Typography variant="overline" color="text.secondary">{area}</Typography>
+        <Chip size="small" label={labels[decision.action]}
+          color={decision.action === 'hold' ? 'primary' : 'warning'} variant="outlined" />
+      </Stack>
+      <Typography variant="h3">{decision.title}</Typography>
+      <Typography variant="body2" mt={0.75}>{decision.instruction}</Typography>
+      <Typography variant="body2" color="text.secondary" mt={0.75}>{decision.reason}</Typography>
+    </Paper>)}
+  </Stack>;
+}
+
+export function RepairInstructions({ repair }: { repair: LineupRepair }) {
+  if (repair.blocked || repair.status !== 'proposed' || !repair.add) return null;
+  return <Paper variant="outlined" component="section" aria-label="Required roster repair" sx={{ p: 2 }}>
+    <Typography variant="h3">Complete this roster repair first</Typography>
+    <Typography variant="body2" mt={0.75}>
+      Complete the move before: {dateTime(repair.deadline_ms, true)}
+    </Typography>
+    <Box component="ol" sx={{ pl: 2.5, mb: 0 }}>
+      {repair.instructions.map((instruction, i) => <Typography component="li" variant="body2" key={i} mb={0.5}>
+        {instruction}
+      </Typography>)}
+    </Box>
+  </Paper>;
+}
+
+export function Pickups({ pickups, historical = false, decision }: {
+  pickups: Stream[]; historical?: boolean; decision?: ManagerDecision;
+}) {
+  const hold = !historical && decision?.action === 'hold';
   return <Accordion disableGutters variant="outlined">
     <AccordionSummary expandIcon={<ExpandMoreIcon />} aria-controls="pickup-details" id="pickup-summary">
-      <Typography fontWeight={600}>{historical ? 'Pickups in this report' : 'Optional pickups'} ({pickups.length})</Typography>
+      <Typography fontWeight={600}>
+        {historical ? 'Pickups in this report' : hold ? 'Pickups considered · no moves recommended' : 'Pickup comparisons'}
+        {' '}({pickups.length})
+      </Typography>
     </AccordionSummary>
     <AccordionDetails>
+      {hold && <Alert severity="info" sx={{ mb: 1.5 }}>Keep your roster. Do not make these swaps right now.</Alert>}
       <Typography variant="body2" color="text.secondary">
-        One-week projection differences only. Confirm availability, waiver timing, roster space and any drop in Sleeper.
-        Future value and waiver priority cost are not modeled.
+        These are one-week projection comparisons, not instructions to add or drop.
+        Future player value and acquisition costs are not modeled well enough to approve an optional move.
       </Typography>
       <List disablePadding>
         {pickups.map((pickup, index) => <ListItem key={`${pickup.add.player_id}-${index}`} disableGutters divider>
           <ListItemText
             primary={<Stack direction="row" justifyContent="space-between" gap={1}>
               <Typography variant="body2" fontWeight={600}>{pickup.add.name}</Typography>
-              <Typography variant="body2" sx={{ whiteSpace: 'nowrap' }}>{signedPoints(pickup.gain)} pts</Typography>
+              <Typography variant="body2" sx={{ whiteSpace: 'nowrap' }}>{signedPoints(pickup.gain)} projected pts</Typography>
             </Stack>}
             secondary={<>
-              {pickup.drop ? `Possible drop: ${pickup.drop.name}. ` : 'No drop proposed. '}
-              {[pickup.acquisition, pickup.warning, pickup.note || pickup.reason].filter(Boolean).join(' ')}
+              {pickup.drop ? `Would require dropping ${pickup.drop.name}. ` : 'No drop included in this comparison. '}
+              {hold && 'Not recommended now. '}
+              {!hold && [pickup.acquisition, pickup.warning, pickup.note || pickup.reason].filter(Boolean).join(' ')}
             </>}
           />
         </ListItem>)}
       </List>
-      {!pickups.length && <Typography variant="body2" mt={1}>No optional pickups were identified in this report.</Typography>}
+      {!pickups.length && <Typography variant="body2" mt={1}>No pickup comparisons were identified in this report.</Typography>}
     </AccordionDetails>
   </Accordion>;
 }
@@ -119,13 +165,14 @@ export function Evidence({ advice }: { advice: Advice }) {
   </Accordion>;
 }
 
-export function SleeperHandoff({ live }: { live: boolean }) {
+export function SleeperHandoff({ live, actionRequired = true }: { live: boolean; actionRequired?: boolean }) {
   return <Box component="section" sx={{ mt: 1.5 }}>
     <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'flex-start', sm: 'center' }} gap={1.5}>
       <Button component={Link} href="https://sleeper.com/" target="_blank" rel="noopener noreferrer"
         variant="outlined" endIcon={<OpenInNewIcon />}>Open Sleeper</Button>
       <Typography variant="body2" color="text.secondary">
-        {live ? 'Make changes in Sleeper, then update advice here.'
+        {live ? actionRequired ? 'Make only the recommended changes in Sleeper, then update advice here.'
+          : 'No lineup or roster changes are recommended right now. Use Sleeper for player-status checks.'
           : 'View your team in Sleeper; update before following saved advice.'} Nothing is applied automatically.
       </Typography>
     </Stack>

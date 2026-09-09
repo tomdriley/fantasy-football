@@ -7,7 +7,7 @@ archive for the configured Sleeper league.
 
 The in-season app uses **React + Material UI** over **FastAPI + Uvicorn**, sharing
 the engine, SQLite evidence archive and CLI operations. My week prioritizes
-freshness, the next deadline and what needs attention. Past advice and research
+freshness, explicit act-or-hold recommendations and the next check time. Past advice and research
 are separate destinations, following the [documented product design](docs/in-season-product-design.md).
 
 ```sh
@@ -18,11 +18,18 @@ npm --prefix web/season run build
 .venv/bin/python scripts/serve_api.py
 ```
 
-Open **http://127.0.0.1:8787/** and choose **Update advice**. Make any changes in
-Sleeper, then update again to check your lineup. Old advice is labeled as
-reference only. Optional pickups are collapsed; experiments and technical
+Open **http://127.0.0.1:8787/** and choose **Update advice**. Make only recommended
+changes in Sleeper, or leave the team unchanged when the recommendation is hold.
+Update again to confirm any changes. Old advice is labeled as reference only.
+Pickup comparisons are collapsed and are not approvals to transact; experiments and technical
 details live under **More**. Updates use durable background jobs.
 API schema: http://127.0.0.1:8787/api/v1/openapi.json.
+
+The advice API returns separate lineup and roster decisions. A real vacancy
+can produce one staged emergency add/drop with a source-age and lock deadline;
+injured, bye-week, locked, reserve and missing-forecast players are protected from drops.
+Optional insurance and probability-weighted injury moves remain unapproved.
+These are explicit baseline decisions under uncertainty, not a claimed proven edge.
 
 On Debian images without `ensurepip`, the tested bootstrap alternative is:
 
