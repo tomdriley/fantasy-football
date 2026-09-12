@@ -1,0 +1,9 @@
+**
+!requirements.txt
+!requirements.lock
+!hosting/
+!hosting/__init__.py
+!hosting/app.py
+!hosting/static/
+!hosting/static/index.html
+!hosting/Dockerfile

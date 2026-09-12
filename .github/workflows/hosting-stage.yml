@@ -1,0 +1,150 @@
+name: Hosting foundation stage
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Explicitly approved operation (never production)
+        required: true
+        type: choice
+        options:
+          - digest-deploy
+          - build-publish
+      expected_release:
+        description: Reviewed lowercase full 40-character source commit SHA
+        required: true
+        type: string
+      target_app:
+        description: For digest-deploy, exact approved fantasy parent app name
+        type: string
+      image_digest:
+        description: For digest-deploy, approved sha256 digest (not a tag)
+        type: string
+      confirmation:
+        description: External approval must already exist; see docs/hosting-azure.md
+        required: true
+        type: choice
+        options:
+          - not-approved
+          - publish-reviewed-foundation
+          - deploy-reviewed-digest
+
+permissions: {}
+
+concurrency:
+  group: hosting-foundation-stage
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/tomdriley/fantasy-football-hosting
+  EXPECTED_RELEASE: ${{ inputs.expected_release }}
+
+jobs:
+  build-publish:
+    if: >-
+      github.repository == 'tomdriley/fantasy-football' &&
+      github.actor == 'tomdriley' && github.triggering_actor == 'tomdriley' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.operation == 'build-publish' &&
+      inputs.confirmation == 'publish-reviewed-foundation'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Require the reviewed current main commit
+        shell: bash
+        run: |
+          [[ "$EXPECTED_RELEASE" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_RELEASE" == "$GITHUB_SHA" ]]
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+      - name: Test and build the reviewed foundation once
+        run: |
+          python -m pip install -r requirements-dev.txt -c requirements.lock
+          python -m unittest discover -s tests -p 'test_hosting*.py'
+          docker build --platform linux/amd64 --provenance=false --sbom=false \
+            -f hosting/Dockerfile --build-arg "RELEASE=$EXPECTED_RELEASE" \
+            -t "$IMAGE:deployment-$EXPECTED_RELEASE" .
+          bash infra/azure/check-image.sh "$IMAGE:deployment-$EXPECTED_RELEASE" "$EXPECTED_RELEASE"
+      - name: Publish only the reviewed package and record its immutable digest
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          umask 077
+          export DOCKER_CONFIG="$GITHUB_WORKSPACE/.hosting-registry"
+          mkdir "$DOCKER_CONFIG"
+          trap 'rm -rf -- "$DOCKER_CONFIG"' EXIT
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username tomdriley --password-stdin
+          tag="$IMAGE:deployment-$EXPECTED_RELEASE"
+          if docker manifest inspect "$tag" > /dev/null 2>&1; then
+            echo "Release tag already exists; deploy the recorded digest instead." >&2
+            exit 1
+          fi
+          docker push "$tag"
+          reference=$(docker image inspect "$tag" --format '{{index .RepoDigests 0}}')
+          [[ "$reference" =~ ^ghcr.io/tomdriley/fantasy-football-hosting@sha256:[0-9a-f]{64}$ ]]
+          printf 'Release: `%s`\n\nImage: `%s`\n\nVerify package visibility and anonymous pull before deployment.\n' \
+            "$EXPECTED_RELEASE" "$reference" >> "$GITHUB_STEP_SUMMARY"
+          review_dir="$RUNNER_TEMP/hosting-image-review"
+          mkdir "$review_dir"
+          docker image save "$tag" --output "$review_dir/image.tar"
+          printf '%s\n' "$reference" > "$review_dir/reference.txt"
+          printf '%s\n' "$EXPECTED_RELEASE" > "$review_dir/release.txt"
+      - name: Retain the exact image privately for publication review
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hosting-image-review-${{ github.sha }}
+          path: ${{ runner.temp }}/hosting-image-review/
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+
+  digest-deploy:
+    if: >-
+      github.repository == 'tomdriley/fantasy-football' &&
+      github.actor == 'tomdriley' && github.triggering_actor == 'tomdriley' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.operation == 'digest-deploy' &&
+      inputs.confirmation == 'deploy-reviewed-digest'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TARGET_APP: ${{ inputs.target_app }}
+      APPROVED_APP: ${{ vars.FFOPT_AZURE_APP_NAME }}
+      IMAGE_DIGEST: ${{ inputs.image_digest }}
+    steps:
+      - name: Validate the exact fantasy target and immutable artifact
+        shell: bash
+        run: |
+          [[ "$EXPECTED_RELEASE" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$TARGET_APP" =~ ^[a-z0-9][a-z0-9-]{1,58}[a-z0-9]$ ]]
+          [[ -n "$APPROVED_APP" && "$TARGET_APP" == "$APPROVED_APP" ]]
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify anonymous pull and the selected release before Azure login
+        shell: bash
+        run: |
+          mkdir .hosting-anonymous
+          trap 'rm -rf -- .hosting-anonymous' EXIT
+          docker --config "$GITHUB_WORKSPACE/.hosting-anonymous" pull "$IMAGE@$IMAGE_DIGEST"
+          bash infra/azure/check-image.sh "$IMAGE@$IMAGE_DIGEST" "$EXPECTED_RELEASE"
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.FFOPT_AZURE_STAGE_CLIENT_ID }}
+          tenant-id: ${{ vars.FFOPT_AZURE_TENANT_ID }}
+          subscription-id: b9ee5d35-c096-4772-8a56-0529054b4dcf
+      - name: Deploy only the stage slot and verify the hosted marker
+        shell: bash
+        run: bash infra/azure/deploy-stage.sh "$TARGET_APP" "$EXPECTED_RELEASE" "$IMAGE_DIGEST"

@@ -1,0 +1,45 @@
+name: Hosting foundation CI
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/hosting-*.yml
+      - .dockerignore
+      - hosting/**
+      - infra/azure/**
+      - scripts/check_hosted_app.py
+      - tests/test_hosting*.py
+      - requirements*.txt
+      - requirements.lock
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  foundation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+      - name: Test only the standalone foundation
+        run: |
+          python -m pip install -r requirements-dev.txt -c requirements.lock
+          python -m unittest discover -s tests -p 'test_hosting*.py'
+      - name: Compile Azure templates without Azure credentials
+        run: |
+          az bicep install --version v0.47.16
+          az bicep build --file infra/azure/main.bicep --stdout > /dev/null
+          az bicep build --file infra/azure/bootstrap.bicep --stdout > /dev/null
+          bash -n infra/azure/check-image.sh infra/azure/deploy-stage.sh
+      - name: Build and smoke-test the non-root container without publication
+        run: |
+          docker build --platform linux/amd64 --provenance=false --sbom=false \
+            -f hosting/Dockerfile --build-arg "RELEASE=$GITHUB_SHA" \
+            -t hosting-foundation:ci .
+          bash infra/azure/check-image.sh hosting-foundation:ci "$GITHUB_SHA"
