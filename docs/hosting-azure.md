@@ -15,6 +15,9 @@ there is no database, authentication, real advisor, worker, or frontend migratio
   The templates reference it; they neither create nor resize it.
 - One newly approved fantasy parent, disabled with public access denied and no
   image, and exactly one `stage` slot. Never supply a blog/existing app name.
+  The empty parent and slot use the same Linux kind. Azure normalizes
+  an image-less parent's kind to `app,linux` and rejects a mismatched
+  `app,linux,container` slot. The slot's container is selected by `linuxFxVersion`.
 - Stage uses HTTPS/TLS 1.2+, port 8080, the reviewed public GHCR digest, no registry
   credentials, no persistent App Service storage, and no runtime managed identity.
   FTP/basic publishing credentials are disabled; SCM ingress is denied.

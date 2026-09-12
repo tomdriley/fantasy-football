@@ -10,6 +10,8 @@ param appName string
 @maxLength(71)
 param imageDigest string
 
+var appKind = 'app,linux'
+
 resource sharedPlan 'Microsoft.Web/serverfarms@2024-11-01' existing = {
   name: 'ASP-WRG3-2'
   scope: resourceGroup('b9ee5d35-c096-4772-8a56-0529054b4dcf', 'WebResourceGroup2')
@@ -18,7 +20,7 @@ resource sharedPlan 'Microsoft.Web/serverfarms@2024-11-01' existing = {
 resource parent 'Microsoft.Web/sites@2024-11-01' = {
   name: appName
   location: 'eastus'
-  kind: 'app,linux,container'
+  kind: appKind
   properties: {
     serverFarmId: sharedPlan.id
     reserved: true
@@ -40,7 +42,7 @@ resource stage 'Microsoft.Web/sites/slots@2024-11-01' = {
   parent: parent
   name: 'stage'
   location: 'eastus'
-  kind: 'app,linux,container'
+  kind: appKind
   properties: {
     serverFarmId: sharedPlan.id
     reserved: true

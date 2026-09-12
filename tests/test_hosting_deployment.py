@@ -350,6 +350,12 @@ class TestHostingDeployment(unittest.TestCase):
         self.assertIn('"$review_dir/reference.txt"', publish)
         self.assertIn('"$review_dir/release.txt"', publish)
 
+    def test_empty_parent_and_slot_have_compatible_linux_kinds(self):
+        template = (ROOT / "infra/azure/main.bicep").read_text()
+        self.assertIn("var appKind = 'app,linux'", template)
+        self.assertEqual(template.count("kind: appKind"), 2)
+        self.assertNotIn("kind: 'app,linux,container'", template)
+
 
 if __name__ == "__main__":
     unittest.main()
