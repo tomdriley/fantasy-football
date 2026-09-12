@@ -1,10 +1,41 @@
 # Azure staging: hosting checkpoint 1
 
-**Code preparation only. Nothing here authorizes a publication, GitHub setting
-change, identity/RBAC change, Azure apply, deployment, or slot swap.** Obtain
-explicit owner approval for each external gate below. The repository remains
+**Checkpoint 1 was deployed and its A/B/A rollback verified on September 12, 2026,
+under explicit owner approval.** These instructions do not authorize additional
+publication, GitHub setting, identity/RBAC, Azure, deployment, or slot-swap changes.
+Obtain explicit owner approval for each external gate below. The repository remains
 private. The [foundation app](hosting.md) serves only harmless synthetic probes;
 there is no database, authentication, real advisor, worker, or frontend migration.
+
+## Verified live target
+
+- App: `thomasriley-fantasy-football`; slot: `stage`.
+- [Staging page](https://thomasriley-fantasy-football-stage.azurewebsites.net/fantasy-football/).
+- The parent production endpoint is disabled/publicly blocked; stage SCM ingress
+  is blocked. Both returned HTTP 403 when checked.
+- Deployment identity: `thomasriley-fantasy-football-stage-deployer`. Its recorded
+  direct/inherited assignment applies only to this staging slot; the four
+  permitted actions are listed below. GitHub OIDC deployment succeeded without
+  adding parent, resource-group, or subscription-wide access.
+- The repository is private; only the reviewed hosting image package is public.
+
+| Rehearsal | Source release | Image digest | Successful deployment |
+|---|---|---|---|
+| A | `ee766e6f8cc912218860c52c5c2a27aaf3d227a1` | `sha256:03caa00014d0a0901648a9c84a0db2bfe4c07b3c4691047dd43e08a1e56594aa` | [Run 34715718713](https://github.com/tomdriley/fantasy-football/actions/runs/34715718713) |
+| B | `7625ef07a6bae0fac42f905ae13d6c0c93a139c8` | `sha256:300b489e73a6da0664a7e7d0a9670acb1c7514a18d13b56eebdf2c846815ebb7` | [Run 34715782156](https://github.com/tomdriley/fantasy-football/actions/runs/34715782156) |
+| Restore A | Original A release | Original A digest, not rebuilt | [Run 34715923502](https://github.com/tomdriley/fantasy-football/actions/runs/34715923502) |
+
+Staging was deliberately left on A after the rehearsal. Git `main` retains the
+latest infrastructure fixes; rolling back an application image does not roll
+back repository history or the corrected deployment identity configuration.
+Independent HTTP and browser checks observed both B and restored A, and Azure's
+final image configuration matched A's digest. Existing blog/article app states,
+image references and resource modification timestamps matched the pre-rollout
+baseline; website/blog/article API checks remained successful.
+
+This verifies the deployment foundation, not production readiness, database
+recovery, authentication, or sustained-load capacity. The next checkpoint is
+separately approved private PostgreSQL with synthetic read-only access.
 
 ## Fixed boundary
 
@@ -200,12 +231,13 @@ The role's resource-group `assignableScopes` specifies where it *may be assigned
 it is not a resource-group permission grant.
 
 The script uses direct slot REST paths to avoid action/CLI ancestor discovery.
-These exact rights and Azure/login's subscription discovery have **not been
-proved against the live target**. If Azure requires an ancestor read, stop,
+These exact rights and Azure/login's subscription discovery were proved against
+the live staging target in the successful A/B/A runs above. If a future platform
+or workflow change requires an ancestor read, stop,
 identify the denied action, and obtain approval for only that read on the exact
 parent (or other necessary ancestor). Do not fall back to parent/RG/subscription
 Contributor or broad Reader. Record the verified effective rights before
-declaring checkpoint 1 accepted.
+accepting a changed permission configuration.
 
 With separate approval, set these repository **variables**, not credentials:
 `FFOPT_AZURE_APP_NAME`, `FFOPT_AZURE_STAGE_CLIENT_ID`, `FFOPT_AZURE_TENANT_ID`.

@@ -3,7 +3,12 @@
 This is a small deployment probe, **not the hosted fantasy advisor**. The existing
 CLI, API, SQLite stores and React application are unchanged.
 
-The implementation currently covers the first checkpoint:
+The [live staging probe](https://thomasriley-fantasy-football-stage.azurewebsites.net/fantasy-football/)
+passed an A/B/A deployment-and-rollback rehearsal on September 12, 2026. The
+production endpoint remains blocked and the existing website has no new routing.
+See the [verified release ledger](hosting-azure.md#verified-live-target).
+
+The implementation covers only the first checkpoint:
 
 1. Deploy the harmless test app to **fantasy staging**, verify the exact release,
    and rehearse deployment rollback.
