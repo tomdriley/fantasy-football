@@ -212,9 +212,12 @@ With separate approval, set these repository **variables**, not credentials:
 Use the bootstrap's client/tenant ID outputs. No publish profile, client secret,
 or GHCR PAT is required.
 
-The federation subject is
-`repo:tomdriley/fantasy-football:ref:refs/heads/main`, audience
-`api://AzureADTokenExchange`. It trusts eligible OIDC jobs on `main`, not just
+The repository uses GitHub's immutable subject format. Its federation subject is
+`repo:tomdriley@17971412/fantasy-football@1355269013:ref:refs/heads/main`, audience
+`api://AzureADTokenExchange`. The owner/repository IDs were verified through
+GitHub's OIDC customization endpoint and the actual Azure-login claim metadata.
+Do not disable immutable subjects to match an older name-only example.
+It trusts eligible OIDC jobs on `main`, not just
 this filename. Restrict write access to trusted maintainers and review workflow
 changes. The workflow also requires both initiating and rerunning actors to be
 `tomdriley`, the exact repository, and `refs/heads/main`.

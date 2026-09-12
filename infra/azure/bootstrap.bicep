@@ -24,7 +24,7 @@ resource federation 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedI
   name: 'github-main'
   properties: {
     issuer: 'https://token.actions.githubusercontent.com'
-    subject: 'repo:tomdriley/fantasy-football:ref:refs/heads/main'
+    subject: 'repo:tomdriley@17971412/fantasy-football@1355269013:ref:refs/heads/main'
     audiences: ['api://AzureADTokenExchange']
   }
 }

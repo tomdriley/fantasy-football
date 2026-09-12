@@ -356,6 +356,14 @@ class TestHostingDeployment(unittest.TestCase):
         self.assertEqual(template.count("kind: appKind"), 2)
         self.assertNotIn("kind: 'app,linux,container'", template)
 
+    def test_federation_matches_the_repository_immutable_subject(self):
+        template = (ROOT / "infra/azure/bootstrap.bicep").read_text()
+        self.assertIn(
+            "subject: 'repo:tomdriley@17971412/fantasy-football@1355269013:ref:refs/heads/main'",
+            template,
+        )
+        self.assertNotIn("subject: 'repo:tomdriley/fantasy-football:", template)
+
 
 if __name__ == "__main__":
     unittest.main()
