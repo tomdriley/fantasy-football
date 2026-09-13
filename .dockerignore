@@ -4,6 +4,7 @@
 !hosting/
 !hosting/__init__.py
 !hosting/app.py
+!hosting/auth.py
 !hosting/database.py
 !hosting/sample.py
 !hosting/static/

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import ipaddress
 import json
 import re
@@ -12,6 +13,7 @@ import time
 from urllib import error, parse, request
 
 MAX_RESPONSE_BYTES = 65536
+AUTH_PHASE = "authentication-only"
 
 
 class CheckFailed(ValueError):
@@ -65,6 +67,30 @@ def fetch(opener: request.OpenerDirector, url: str, content_type: str) -> bytes:
     return body
 
 
+def check_anonymous_denial(opener, base: str, path: str, *, forged: bool = False):
+    headers = {"Accept": "application/json"}
+    if forged:
+        subject = "100000000000000000000"
+        headers.update({
+            "X-MS-CLIENT-PRINCIPAL-IDP": "google",
+            "X-MS-CLIENT-PRINCIPAL-ID": subject,
+            "X-MS-CLIENT-PRINCIPAL-NAME": "forged@example.invalid",
+            "X-MS-CLIENT-PRINCIPAL": base64.b64encode(json.dumps({
+                "auth_typ": "google", "claims": [{"typ": "sub", "val": subject}],
+                "name_typ": "name", "role_typ": "role",
+            }).encode()).decode("ascii"),
+        })
+    try:
+        with opener.open(request.Request(base + path, headers=headers), timeout=10):
+            raise CheckFailed(f"{path}: unauthenticated request was not denied.")
+    except error.HTTPError as exc:
+        exc.close()
+        if exc.code != 401:
+            raise CheckFailed(f"{path}: expected HTTP 401 without credentials; redirects are not accepted.") from exc
+    except (error.URLError, OSError) as exc:
+        raise CheckFailed(f"{path}: connection or TLS check failed.") from exc
+
+
 def check_release(
     url: str, release: str, environment: str, *,
     allow_http: bool = False, expected_phase: str = "deployment",
@@ -74,8 +100,10 @@ def check_release(
         raise CheckFailed("Expected release must be a lowercase commit SHA or development.")
     if environment not in ("local", "stage") or (environment == "stage" and release == "development"):
         raise CheckFailed("Use local or stage; stage requires a commit SHA.")
-    if expected_phase not in ("deployment", "database-readonly"):
-        raise CheckFailed("Expected phase must be deployment or database-readonly.")
+    if expected_phase not in ("deployment", "database-readonly", AUTH_PHASE):
+        raise CheckFailed("Expected phase must be deployment, database-readonly or authentication-only.")
+    if expected_phase == AUTH_PHASE and (environment != "stage" or allow_http):
+        raise CheckFailed("Authentication checks require the HTTPS stage Easy Auth origin.")
     opener = request.build_opener(NoRedirects)
     expected = {
         "/healthz": {"status": "ok"},
@@ -117,6 +145,12 @@ def check_release(
             raise CheckFailed("Page does not identify the expected deployment or prefix.")
     if expected_phase == "database-readonly" and 'href="/fantasy-football/api/sample"' not in page:
         raise CheckFailed("Page does not link to the database sample.")
+    if expected_phase == AUTH_PHASE:
+        if 'href="/.auth/login/google?post_login_redirect_uri=/fantasy-football/api/session"' not in page:
+            raise CheckFailed("Page does not link to managed Google sign-in.")
+        for path in ("/fantasy-football/api/session", "/fantasy-football/api/sample"):
+            check_anonymous_denial(opener, base, path)
+            check_anonymous_denial(opener, base, path, forged=True)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -124,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("url", help="app origin, e.g. https://the-stage-host.azurewebsites.net")
     parser.add_argument("--expected-release", required=True)
     parser.add_argument("--expected-environment", choices=("local", "stage"), default="stage")
-    parser.add_argument("--expected-phase", choices=("deployment", "database-readonly"), default="deployment")
+    parser.add_argument("--expected-phase", choices=("deployment", "database-readonly", AUTH_PHASE), default="deployment")
     parser.add_argument("--allow-http", action="store_true", help="permit HTTP for loopback only")
     parser.add_argument("--attempts", type=int, default=1, choices=range(1, 61), metavar="1..60")
     args = parser.parse_args(argv)

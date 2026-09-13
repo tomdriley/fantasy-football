@@ -6,7 +6,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     FFOPT_HOSTING_ENVIRONMENT=stage \
     FFOPT_HOSTING_RELEASE=${RELEASE}
 LABEL org.opencontainers.image.title="Fantasy football hosting probe" \
-      org.opencontainers.image.revision=${RELEASE}
+      org.opencontainers.image.revision=${RELEASE} \
+      io.ffopt.hosting.authentication="google-allowlist-v1"
 
 WORKDIR /app
 COPY requirements.txt requirements.lock ./
@@ -14,7 +15,7 @@ RUN python -m pip install --no-cache-dir -r requirements.txt -c requirements.loc
     && groupadd --gid 10001 hosting \
     && useradd --uid 10001 --gid 10001 --no-create-home hosting
 
-COPY --chown=10001:10001 hosting/__init__.py hosting/app.py hosting/database.py hosting/sample.py ./hosting/
+COPY --chown=10001:10001 hosting/__init__.py hosting/app.py hosting/auth.py hosting/database.py hosting/sample.py ./hosting/
 COPY --chown=10001:10001 hosting/static/index.html ./hosting/static/index.html
 
 USER 10001:10001

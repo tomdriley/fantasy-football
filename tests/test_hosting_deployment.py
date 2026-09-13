@@ -38,7 +38,12 @@ az() {
     printf '%s\n' "$MOCK_HOST"
   elif [[ "$*" == *'--query properties.linuxFxVersion'* ]]; then
     printf '%s\n' "$MOCK_IMAGE"
-  elif [[ "$*" == *'--method patch'* || "$*" == *'--method post'* ]]; then
+  elif [[ "$*" == *'/config/authsettingsV2?'* ]]; then
+    printf '{"properties":{"platform":{"enabled":false}}}\n'
+  elif [[ "$*" == *'--method patch'* ]]; then
+    export MOCK_IMAGE_PATCHED=1
+    return 0
+  elif [[ "$*" == *'--method post'* ]]; then
     return 0
   else
     return 97
@@ -52,6 +57,8 @@ docker() {
     printf '%s\n' "$MOCK_ARCH"
   elif [[ "$*" == *'org.opencontainers.image.revision'* ]]; then
     printf '%s\n' "$MOCK_RELEASE"
+  elif [[ "$*" == *'io.ffopt.hosting.authentication'* ]]; then
+    printf '%s\n' "$MOCK_AUTH_CAPABILITY"
   elif [[ "$1" == run ]]; then
     if [[ "$MOCK_RUN_STATUS" != 0 ]]; then
       printf 'Container name already belongs to another container.\n' >&2
@@ -68,6 +75,13 @@ docker() {
 }
 python3() {
   trace python3 "$@"
+  if [[ "$1" == scripts/check_hosting_auth_config.py ]]; then
+    while IFS= read -r line; do :; done
+    if [[ "$MOCK_IMAGE_PATCHED" == 1 ]]; then
+      return "$MOCK_POST_AUTH_STATUS"
+    fi
+    return "$MOCK_AUTH_STATUS"
+  fi
   return "$MOCK_SMOKE_STATUS"
 }
 timeout() {
@@ -98,6 +112,10 @@ class TestHostingDeployment(unittest.TestCase):
             "MOCK_CONTAINER_ID": CONTAINER_ID,
             "MOCK_RUN_STATUS": "0",
             "MOCK_SMOKE_STATUS": "0",
+            "MOCK_AUTH_STATUS": "0",
+            "MOCK_POST_AUTH_STATUS": "0",
+            "MOCK_IMAGE_PATCHED": "0",
+            "MOCK_AUTH_CAPABILITY": "google-allowlist-v1",
         }
         environment.update(overrides)
         return subprocess.run(
@@ -114,6 +132,10 @@ class TestHostingDeployment(unittest.TestCase):
             if line.startswith(prefix)
         ]
 
+    @classmethod
+    def smoke_calls(cls, result):
+        return [call for call in cls.calls(result, "python3") if call[0] == "scripts/check_hosted_app.py"]
+
     @staticmethod
     def workflow(filename):
         path = ROOT / ".github/workflows" / filename
@@ -128,18 +150,20 @@ class TestHostingDeployment(unittest.TestCase):
              for call in calls],
             [
                 ("get", SLOT + API),
+                ("get", SLOT + "/config/authsettingsV2" + API),
                 ("get", SLOT + "/config/web" + API),
                 ("patch", SLOT + "/config/web" + API),
                 ("post", SLOT + "/restart" + API),
                 ("get", SLOT + "/config/web" + API),
                 ("get", SLOT + "/config/web" + API),
+                ("get", SLOT + "/config/authsettingsV2" + API),
             ],
         )
-        patch = calls[2]
+        patch = calls[3]
         self.assertEqual(json.loads(patch[patch.index("--body") + 1]), {
             "properties": {"linuxFxVersion": f"DOCKER|{IMAGE}"},
         })
-        self.assertEqual(self.calls(result, "python3"), [[
+        self.assertEqual(self.smoke_calls(result), [[
             "scripts/check_hosted_app.py", f"https://{HOST}",
             "--expected-environment", "stage", "--expected-release", SHA,
         ]])
@@ -178,7 +202,62 @@ class TestHostingDeployment(unittest.TestCase):
                 ]
                 if phase == "database-readonly":
                     expected += ["--expected-phase", phase]
-                self.assertEqual(self.calls(result, "python3"), [expected])
+                self.assertEqual(self.smoke_calls(result), [expected])
+
+    def test_auth_phase_verifies_live_config_before_and_after_image_change(self):
+        result = self.run_script(
+            "deploy-stage.sh", [APP, SHA, DIGEST, "authentication-only"],
+            FFOPT_STAGE_AUTH_LOCK="google-allowlist-v1",
+            FFOPT_STAGE_GOOGLE_CLIENT_ID="123-example.apps.googleusercontent.com",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        auth_checks = [call for call in self.calls(result, "python3")
+                       if call[0] == "scripts/check_hosting_auth_config.py"]
+        self.assertEqual(len(auth_checks), 2)
+        self.assertIn("123-example.apps.googleusercontent.com", auth_checks[0])
+        self.assertIn("google-allowlist-v1", auth_checks[0])
+        self.assertEqual(self.smoke_calls(result)[0][-2:], ["--expected-phase", "authentication-only"])
+        calls = self.calls(result, "az")
+        writes = [call for call in calls if call[call.index("--method") + 1] in ("patch", "post")]
+        self.assertEqual(len(writes), 2)
+        self.assertIn("/config/web?", writes[0][writes[0].index("--url") + 1])
+        self.assertIn("/config/authsettingsV2?", calls[1][calls[1].index("--url") + 1])
+        self.assertIn("/config/authsettingsV2?", calls[-1][calls[-1].index("--url") + 1])
+
+    def test_missing_lock_legacy_phase_bad_config_or_legacy_image_never_writes(self):
+        cases = [
+            ("authentication-only", {}),
+            ("deployment", {"FFOPT_STAGE_AUTH_LOCK": "google-allowlist-v1"}),
+            ("database-readonly", {"FFOPT_STAGE_AUTH_LOCK": "google-allowlist-v1"}),
+            ("deployment", {"MOCK_AUTH_STATUS": "1"}),
+            ("authentication-only", {"FFOPT_STAGE_AUTH_LOCK": "google-allowlist-v1", "MOCK_AUTH_STATUS": "1"}),
+            ("authentication-only", {"FFOPT_STAGE_AUTH_LOCK": "google-allowlist-v1", "MOCK_AUTH_CAPABILITY": ""}),
+        ]
+        for phase, overrides in cases:
+            with self.subTest(phase=phase, overrides=overrides):
+                result = self.run_script("deploy-stage.sh", [APP, SHA, DIGEST, phase], **overrides)
+                self.assertNotEqual(result.returncode, 0, result.stderr)
+                self.assertFalse(any("patch" in call or "post" in call for call in self.calls(result, "az")))
+                self.assertFalse(self.smoke_calls(result))
+
+    def test_auth_image_check_rejects_legacy_capability_before_starting_container(self):
+        result = self.run_script(
+            "check-image.sh", [IMAGE, SHA, "authentication-only"], MOCK_AUTH_CAPABILITY="",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any(call[0] == "run" for call in self.calls(result, "docker")))
+        result = self.run_script("check-image.sh", [IMAGE, SHA, "authentication-only"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_auth_configuration_drift_never_reports_deployment_success(self):
+        result = self.run_script(
+            "deploy-stage.sh", [APP, SHA, DIGEST, "authentication-only"],
+            FFOPT_STAGE_AUTH_LOCK="google-allowlist-v1", MOCK_POST_AUTH_STATUS="1",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("Verified stage release", result.stdout)
+        auth_checks = [call for call in self.calls(result, "az") if "/config/authsettingsV2?" in " ".join(call)]
+        self.assertEqual(len(auth_checks), 2)
 
     def test_bad_host_aborts_before_image_update(self):
         for host in ("", "evil.example", "stage.azurewebsites.net/path",
@@ -187,14 +266,14 @@ class TestHostingDeployment(unittest.TestCase):
                 result = self.run_script("deploy-stage.sh", [APP, SHA, DIGEST], MOCK_HOST=host)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(len(self.calls(result, "az")), 1, result.stderr)
-                self.assertFalse(self.calls(result, "python3"))
+                self.assertFalse(self.smoke_calls(result))
 
     def test_wrong_configured_digest_fails_before_smoke(self):
         result = self.run_script(
             "deploy-stage.sh", [APP, SHA, DIGEST], MOCK_IMAGE=f"DOCKER|{PACKAGE}@sha256:" + "c" * 64,
         )
         self.assertNotEqual(result.returncode, 0)
-        self.assertFalse(self.calls(result, "python3"))
+        self.assertFalse(self.smoke_calls(result))
         self.assertIn("did not match the requested digest", result.stderr)
 
     def test_stage_smoke_errors_exhaust_bounded_retries_without_rollback(self):
@@ -204,7 +283,7 @@ class TestHostingDeployment(unittest.TestCase):
                     "deploy-stage.sh", [APP, SHA, DIGEST], MOCK_SMOKE_STATUS=status,
                 )
                 self.assertNotEqual(result.returncode, 0)
-                self.assertEqual(len(self.calls(result, "python3")), 24)
+                self.assertEqual(len(self.smoke_calls(result)), 24)
                 calls = self.calls(result, "az")
                 self.assertEqual(sum("patch" in call for call in calls), 1)
                 self.assertEqual(sum("post" in call for call in calls), 1)
@@ -218,7 +297,7 @@ class TestHostingDeployment(unittest.TestCase):
                     "deploy-stage.sh", [APP, SHA, DIGEST], MOCK_AZ_FAILURE=method,
                 )
                 self.assertNotEqual(result.returncode, 0)
-                self.assertFalse(self.calls(result, "python3"))
+                self.assertFalse(self.smoke_calls(result))
                 calls = self.calls(result, "az")
                 self.assertEqual(calls[-1][calls[-1].index("--method") + 1], method)
 
@@ -236,7 +315,7 @@ class TestHostingDeployment(unittest.TestCase):
                 self.assertEqual(json.loads(patch[patch.index("--body") + 1]), {
                     "properties": {"linuxFxVersion": f"DOCKER|{image}"},
                 })
-                self.assertEqual(self.calls(result, "python3")[0][-1], release)
+                self.assertEqual(self.smoke_calls(result)[0][-1], release)
                 self.assertFalse(self.calls(result, "docker"))
 
     def test_container_smoke_checks_hardened_runtime_and_cleans_up_its_id(self):
@@ -348,6 +427,10 @@ class TestHostingDeployment(unittest.TestCase):
             ({"IMAGE_DIGEST": "latest"}, False),
             ({"EXPECTED_RELEASE": "development"}, False),
             ({"EXPECTED_PHASE": "database-readonly"}, True),
+            ({"EXPECTED_PHASE": "authentication-only"}, False),
+            ({"FFOPT_STAGE_AUTH_LOCK": "google-allowlist-v1"}, False),
+            ({"EXPECTED_PHASE": "authentication-only", "FFOPT_STAGE_AUTH_LOCK": "google-allowlist-v1",
+              "FFOPT_STAGE_GOOGLE_CLIENT_ID": "123-example.apps.googleusercontent.com"}, True),
             ({"EXPECTED_PHASE": ""}, False),
             ({"EXPECTED_PHASE": "invalid"}, False),
             ({"EXPECTED_PHASE": "database-readonly;echo unexpected"}, False),
@@ -360,20 +443,23 @@ class TestHostingDeployment(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode == 0, succeeds, result.stderr)
 
-    def test_manual_phase_input_only_changes_hosted_verification(self):
+    def test_manual_phase_input_also_guards_auth_capability_before_azure_login(self):
         workflow = self.workflow("hosting-stage.yml")
         phase = workflow["on"]["workflow_dispatch"]["inputs"]["expected_phase"]
         self.assertEqual(phase["type"], "choice")
         self.assertEqual(phase["default"], "database-readonly")
-        self.assertEqual(phase["options"], ["deployment", "database-readonly"])
+        self.assertEqual(phase["options"], ["deployment", "database-readonly", "authentication-only"])
         deploy = workflow["jobs"]["digest-deploy"]
         self.assertEqual(deploy["env"]["EXPECTED_PHASE"], "${{ inputs.expected_phase }}")
         self.assertIn('"$IMAGE_DIGEST" "$EXPECTED_PHASE"', deploy["steps"][-1]["run"])
-        for job in workflow["jobs"].values():
+        for name, job in workflow["jobs"].items():
             for step in job["steps"]:
                 for line in step.get("run", "").splitlines():
                     if "check-image.sh" in line:
-                        self.assertNotIn("PHASE", line)
+                        if name == "digest-deploy":
+                            self.assertIn('"$EXPECTED_PHASE"', line)
+                        else:
+                            self.assertNotIn("PHASE", line)
                         self.assertNotIn("--expected-phase", line)
 
     def test_publication_retains_only_the_image_review_artifact(self):
@@ -388,6 +474,37 @@ class TestHostingDeployment(unittest.TestCase):
         self.assertIn('review_dir="$RUNNER_TEMP/hosting-image-review"', publish)
         self.assertIn('"$review_dir/reference.txt"', publish)
         self.assertIn('"$review_dir/release.txt"', publish)
+
+    def test_ci_candidate_artifact_is_manual_private_and_never_publishes(self):
+        ci = self.workflow("hosting-ci.yml")
+        steps = ci["jobs"]["foundation"]["steps"]
+        save = next(step for step in steps if "docker image save" in step.get("run", ""))
+        upload = next(step for step in steps if step.get("uses", "").startswith("actions/upload-artifact@"))
+        condition = "github.event_name == 'workflow_dispatch' && github.event.repository.private == true"
+        self.assertEqual(save["if"], condition)
+        self.assertEqual(upload["if"], condition)
+        self.assertEqual(ci["permissions"], {"contents": "read"})
+        self.assertEqual(upload["with"], {
+            "name": "hosting-candidate-review-${{ github.sha }}",
+            "path": "${{ runner.temp }}/hosting-candidate-review/",
+            "if-no-files-found": "error", "retention-days": "3", "compression-level": "0",
+        })
+        stage_steps = self.workflow("hosting-stage.yml")["jobs"]["build-publish"]["steps"]
+        stage_upload = next(step for step in stage_steps if step.get("uses", "").startswith("actions/upload-artifact@"))
+        self.assertEqual(upload["uses"], stage_upload["uses"])
+        self.assertIn('review_dir="$RUNNER_TEMP/hosting-candidate-review"', save["run"])
+        self.assertIn('docker image save hosting-foundation:ci --output "$review_dir/image.tar"', save["run"])
+        self.assertIn('printf \'%s\\n\' "$GITHUB_SHA" > "$review_dir/release.txt"', save["run"])
+        self.assertIn('> "$review_dir/reference.txt"', save["run"])
+        self.assertIn('> "$review_dir/image-id.txt"', save["run"])
+        self.assertGreater(steps.index(save), next(
+            index for index, step in enumerate(steps) if "docker build" in step.get("run", "")
+        ))
+        self.assertGreater(steps.index(upload), steps.index(save))
+        for step in steps:
+            self.assertNotIn("docker push", step.get("run", ""))
+            self.assertNotIn("docker login", step.get("run", ""))
+            self.assertFalse(step.get("uses", "").startswith("azure/login@"))
 
     def test_empty_parent_and_slot_have_compatible_linux_kinds(self):
         template = (ROOT / "infra/azure/main.bicep").read_text()
