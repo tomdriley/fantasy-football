@@ -155,12 +155,28 @@ class TestHostingDeployment(unittest.TestCase):
             [APP, SHA, "latest"],
             [APP, SHA, "sha256:" + "g" * 64],
             [APP, SHA, "sha256:" + "b" * 63],
+            [APP, SHA, DIGEST, ""],
+            [APP, SHA, DIGEST, "invalid"],
+            [APP, SHA, DIGEST, "database-readonly;echo unexpected"],
         ]
         for args in cases:
             with self.subTest(args=args):
                 result = self.run_script("deploy-stage.sh", args)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse(self.calls(result, "az"), result.stderr)
+
+    def test_stage_phase_is_forwarded_only_when_needed(self):
+        for phase in ("deployment", "database-readonly"):
+            with self.subTest(phase=phase):
+                result = self.run_script("deploy-stage.sh", [APP, SHA, DIGEST, phase])
+                self.assertEqual(result.returncode, 0, result.stderr)
+                expected = [
+                    "scripts/check_hosted_app.py", f"https://{HOST}",
+                    "--expected-environment", "stage", "--expected-release", SHA,
+                ]
+                if phase == "database-readonly":
+                    expected += ["--expected-phase", phase]
+                self.assertEqual(self.calls(result, "python3"), [expected])
 
     def test_bad_host_aborts_before_image_update(self):
         for host in ("", "evil.example", "stage.azurewebsites.net/path",
@@ -320,6 +336,7 @@ class TestHostingDeployment(unittest.TestCase):
         environment = {
             "PATH": "", "LC_ALL": "C", "EXPECTED_RELEASE": SHA, "IMAGE_DIGEST": DIGEST,
             "TARGET_APP": APP, "APPROVED_APP": APP,
+            "EXPECTED_PHASE": "deployment",
         }
         cases = [
             ({}, True),
@@ -328,6 +345,10 @@ class TestHostingDeployment(unittest.TestCase):
             ({"TARGET_APP": "fantasy-probe;echo unexpected"}, False),
             ({"IMAGE_DIGEST": "latest"}, False),
             ({"EXPECTED_RELEASE": "development"}, False),
+            ({"EXPECTED_PHASE": "database-readonly"}, True),
+            ({"EXPECTED_PHASE": ""}, False),
+            ({"EXPECTED_PHASE": "invalid"}, False),
+            ({"EXPECTED_PHASE": "database-readonly;echo unexpected"}, False),
         ]
         for overrides, succeeds in cases:
             with self.subTest(overrides=overrides):
@@ -336,6 +357,22 @@ class TestHostingDeployment(unittest.TestCase):
                     capture_output=True, text=True, timeout=10,
                 )
                 self.assertEqual(result.returncode == 0, succeeds, result.stderr)
+
+    def test_manual_phase_input_only_changes_hosted_verification(self):
+        workflow = self.workflow("hosting-stage.yml")
+        phase = workflow["on"]["workflow_dispatch"]["inputs"]["expected_phase"]
+        self.assertEqual(phase["type"], "choice")
+        self.assertEqual(phase["default"], "deployment")
+        self.assertEqual(phase["options"], ["deployment", "database-readonly"])
+        deploy = workflow["jobs"]["digest-deploy"]
+        self.assertEqual(deploy["env"]["EXPECTED_PHASE"], "${{ inputs.expected_phase }}")
+        self.assertIn('"$IMAGE_DIGEST" "$EXPECTED_PHASE"', deploy["steps"][-1]["run"])
+        for job in workflow["jobs"].values():
+            for step in job["steps"]:
+                for line in step.get("run", "").splitlines():
+                    if "check-image.sh" in line:
+                        self.assertNotIn("PHASE", line)
+                        self.assertNotIn("--expected-phase", line)
 
     def test_publication_retains_only_the_image_review_artifact(self):
         steps = self.workflow("hosting-stage.yml")["jobs"]["build-publish"]["steps"]

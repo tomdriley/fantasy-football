@@ -14,7 +14,7 @@ RUN python -m pip install --no-cache-dir -r requirements.txt -c requirements.loc
     && groupadd --gid 10001 hosting \
     && useradd --uid 10001 --gid 10001 --no-create-home hosting
 
-COPY --chown=10001:10001 hosting/__init__.py hosting/app.py ./hosting/
+COPY --chown=10001:10001 hosting/__init__.py hosting/app.py hosting/database.py hosting/sample.py ./hosting/
 COPY --chown=10001:10001 hosting/static/index.html ./hosting/static/index.html
 
 USER 10001:10001

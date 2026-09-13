@@ -17,8 +17,10 @@ The implementation covers only the first checkpoint:
    application database writes.
 4. Later: one authenticated synthetic write and a database restore drill.
 
-Database/authentication/write checkpoints are not implemented or simulated by
-this page. There are no workers, league configuration, real data, or write routes.
+The database-readonly mode is implemented for synthetic canaries; this does not
+mean the existing East US staging slot has been connected to a database.
+Authentication and application-write checkpoints are not implemented. There
+are no workers, league configuration, real data, or write routes.
 No website proxy, production deployment, slot swap, or repository publication is
 part of this checkpoint.
 
@@ -53,6 +55,7 @@ oversized responses and a healthy response from the wrong app.
 | `FFOPT_HOSTING_ENVIRONMENT` | `local` or `stage`; the image defaults to `stage`. Production is deliberately unsupported. |
 | `FFOPT_HOSTING_RELEASE` | Full lowercase commit SHA baked into the image using build argument `RELEASE`. Local development may use `development`. Do not override the image's release in Azure settings. |
 | `FFOPT_HOSTING_ALLOWED_HOSTS` | Comma-separated exact DNS names/IPv4 hosts, without schemes, ports, or wildcards. Required in staging. Use the slot's actual Azure hostname. |
+| `FFOPT_HOSTING_PHASE` | `deployment` (default) or `database-readonly`. The latter requires explicit database settings and never creates a schema. |
 
 Local defaults permit `localhost` and `127.0.0.1`. Stage refuses a missing
 hostname, a local test hostname, or the `development` release. These checks are
@@ -71,8 +74,59 @@ rejected. Unrelated routes, including the real advisor API, are absent. Requests
 and responses do not disclose arbitrary environment variables. Proxy headers
 are not trusted to construct redirects.
 
-Readiness currently proves only this small app has initialized. It does not
+In default `deployment` mode, readiness proves only this small app has initialized. It does not
 claim database, authentication, worker or football-data readiness.
+
+## Read-only PostgreSQL canary
+
+In `database-readonly` mode, `/readyz` performs a real database read and returns
+503 if the connection, privileges or synthetic data checks fail. `/healthz`
+remains process liveness. `/fantasy-football/api/sample` exposes only the three
+approved synthetic rows; unexpected contents are rejected rather than exposed.
+No database errors fall back to hard-coded successful sample responses.
+
+Set `FFOPT_DB_HOST`, `FFOPT_DB_NAME`, `FFOPT_DB_USER` and `FFOPT_DB_PASSWORD`.
+For Azure, use a slot-specific Key Vault reference for the reader password.
+The serving identity must not have access to the administrator secret. An
+unresolved Key Vault reference is a configuration error, not a password fallback.
+
+Stage requires an Azure PostgreSQL hostname, port 5432 and `verify-full` TLS
+using the CA bundle at `/etc/ssl/certs/ca-certificates.crt`. An explicit
+`FFOPT_DB_ROOT_CERTIFICATE` can select an approved CA bundle. Disabling TLS is
+accepted only for an explicitly configured local loopback test fixture.
+
+The connection pool is bounded to two connections and four waiting callers,
+with connection/query/lock timeouts. Each read checks the role's relevant
+privileges and validates the exact synthetic dataset. The role must have only
+the necessary CONNECT, schema USAGE and table SELECT privileges, no elevating
+memberships, and no schema/database creation or sample-table write privileges.
+Schema and credentials are provisioned through a separate private operator path,
+not application startup.
+
+```sh
+python3 scripts/check_hosted_app.py https://THE-CANARY-HOST \
+  --expected-environment stage --expected-release FULL_COMMIT_SHA \
+  --expected-phase database-readonly
+```
+
+The release workflow accepts the same expected phase. Its local container
+identity check remains dependency-free `deployment` mode; the hosted check for
+`database-readonly` additionally verifies the actual SQL sample.
+
+Real PostgreSQL tests use an isolated PostgreSQL 17 service in CI, with only
+synthetic test credentials. Locally, set `FFOPT_TEST_POSTGRES_PORT` to the
+loopback port of an explicitly started matching test container:
+
+```sh
+FFOPT_TEST_POSTGRES_PORT=YOUR_LOCAL_TEST_PORT \
+  .venv/bin/python -m unittest discover -s tests -p 'test_*hosting*.py'
+```
+
+That fixture must use the documented CI-only `postgres`/`local-test-only`
+credentials, never an Azure database. Tests create randomly named local
+databases/roles, verify actual SQL permission failures with transaction
+read-only mode switched off, and clean up only those test objects. The normal
+`test_hosting*.py` selector does not require a running PostgreSQL fixture.
 
 ## Container
 

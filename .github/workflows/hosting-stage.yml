@@ -14,6 +14,14 @@ on:
         description: Reviewed lowercase full 40-character source commit SHA
         required: true
         type: string
+      expected_phase:
+        description: For digest-deploy, expected hosted application phase
+        required: true
+        default: deployment
+        type: choice
+        options:
+          - deployment
+          - database-readonly
       target_app:
         description: For digest-deploy, exact approved fantasy parent app name
         type: string
@@ -52,6 +60,17 @@ jobs:
     permissions:
       contents: read
       packages: write
+    services:
+      postgres:
+        image: postgres:17@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675
+        env:
+          POSTGRES_PASSWORD: local-test-only
+        ports:
+          - "127.0.0.1::5432"
+        options: >-
+          --cpus 1 --memory 512m
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
     steps:
       - name: Require the reviewed current main commit
         shell: bash
@@ -65,9 +84,12 @@ jobs:
         with:
           python-version: '3.14'
       - name: Test and build the reviewed foundation once
+        env:
+          FFOPT_TEST_POSTGRES_PORT: ${{ job.services.postgres.ports[5432] }}
         run: |
+          test -n "$FFOPT_TEST_POSTGRES_PORT"
           python -m pip install -r requirements-dev.txt -c requirements.lock
-          python -m unittest discover -s tests -p 'test_hosting*.py'
+          python -m unittest discover -s tests -p 'test_*hosting*.py'
           docker build --platform linux/amd64 --provenance=false --sbom=false \
             -f hosting/Dockerfile --build-arg "RELEASE=$EXPECTED_RELEASE" \
             -t "$IMAGE:deployment-$EXPECTED_RELEASE" .
@@ -122,12 +144,14 @@ jobs:
       TARGET_APP: ${{ inputs.target_app }}
       APPROVED_APP: ${{ vars.FFOPT_AZURE_APP_NAME }}
       IMAGE_DIGEST: ${{ inputs.image_digest }}
+      EXPECTED_PHASE: ${{ inputs.expected_phase }}
     steps:
       - name: Validate the exact fantasy target and immutable artifact
         shell: bash
         run: |
           [[ "$EXPECTED_RELEASE" =~ ^[0-9a-f]{40}$ ]]
           [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$EXPECTED_PHASE" == deployment || "$EXPECTED_PHASE" == database-readonly ]]
           [[ "$TARGET_APP" =~ ^[a-z0-9][a-z0-9-]{1,58}[a-z0-9]$ ]]
           [[ -n "$APPROVED_APP" && "$TARGET_APP" == "$APPROVED_APP" ]]
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -147,4 +171,4 @@ jobs:
           subscription-id: b9ee5d35-c096-4772-8a56-0529054b4dcf
       - name: Deploy only the stage slot and verify the hosted marker
         shell: bash
-        run: bash infra/azure/deploy-stage.sh "$TARGET_APP" "$EXPECTED_RELEASE" "$IMAGE_DIGEST"
+        run: bash infra/azure/deploy-stage.sh "$TARGET_APP" "$EXPECTED_RELEASE" "$IMAGE_DIGEST" "$EXPECTED_PHASE"

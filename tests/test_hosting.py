@@ -168,6 +168,82 @@ class TestHostingSmoke(unittest.TestCase):
         with self.replies(self.payloads()):
             smoke.check_release("https://stage.example.test", SHA, "stage")
 
+    def database_payloads(self):
+        payloads = self.payloads()
+        status = json.loads(payloads["/fantasy-football/api/status"][1])
+        status["phase"] = "database-readonly"
+        payloads["/fantasy-football/api/status"] = ("application/json", json.dumps(status).encode())
+        payloads["/fantasy-football/api/sample"] = ("application/json", json.dumps({
+            "dataset": "hosting-probe-v1",
+            "rows": [
+                {"id": 1, "label": "synthetic-alpha", "value": 10},
+                {"id": 2, "label": "synthetic-beta", "value": 20},
+                {"id": 3, "label": "synthetic-gamma", "value": 30},
+            ],
+        }).encode())
+        kind, page = payloads["/fantasy-football/"]
+        payloads["/fantasy-football/"] = (kind, page + b'<a href="/fantasy-football/api/sample">sample</a>')
+        return payloads
+
+    def test_database_phase_checks_sample_and_page(self):
+        with self.replies(self.database_payloads()):
+            smoke.check_release("https://stage.example.test", SHA, "stage", expected_phase="database-readonly")
+        for path in ("/fantasy-football/api/status", "/fantasy-football/"):
+            payloads = self.database_payloads()
+            payloads[path] = self.payloads()[path]
+            with self.subTest(path=path), self.replies(payloads), self.assertRaises(smoke.CheckFailed):
+                smoke.check_release("https://stage.example.test", SHA, "stage", expected_phase="database-readonly")
+        with self.replies(self.database_payloads()), self.assertRaises(smoke.CheckFailed):
+            smoke.check_release("https://stage.example.test", SHA, "stage")
+
+    def test_database_sample_requires_exact_shape_and_values(self):
+        expected = json.loads(self.database_payloads()["/fantasy-football/api/sample"][1])
+        bad_samples = [
+            {}, {**expected, "dataset": "other"}, {**expected, "extra": True},
+            {**expected, "rows": expected["rows"][:-1]},
+            {**expected, "rows": list(reversed(expected["rows"]))},
+        ]
+        for key, value in (("id", True), ("id", 1.0), ("value", 11),
+                           ("label", "wrong"), ("extra", "field")):
+            rows = [dict(row) for row in expected["rows"]]
+            rows[0][key] = value
+            bad_samples.append({**expected, "rows": rows})
+        for sample in bad_samples:
+            payloads = self.database_payloads()
+            payloads["/fantasy-football/api/sample"] = ("application/json", json.dumps(sample).encode())
+            with self.subTest(sample=sample), self.replies(payloads), self.assertRaises(smoke.CheckFailed):
+                smoke.check_release("https://stage.example.test", SHA, "stage", expected_phase="database-readonly")
+
+    def test_database_readiness_and_sample_http_failures_are_rejected(self):
+        for path in ("/readyz", "/fantasy-football/api/sample"):
+            with self.subTest(path=path), self.replies(self.database_payloads()):
+                original_open = smoke.request.OpenerDirector.open
+
+                def open_response(opener, req, timeout):
+                    if req.full_url.endswith(path):
+                        raise HTTPError(req.full_url, 503, "Unavailable", {}, None)
+                    return original_open(req, timeout=timeout)
+
+                with patch.object(smoke.request.OpenerDirector, "open", new=open_response), \
+                        self.assertRaisesRegex(smoke.CheckFailed, "HTTP 503"):
+                    smoke.check_release("https://stage.example.test", SHA, "stage", expected_phase="database-readonly")
+
+    def test_cli_phase_default_and_selection(self):
+        for phase in ("deployment", "database-readonly"):
+            args = ["https://stage.example.test", "--expected-release", SHA]
+            if phase != "deployment":
+                args += ["--expected-phase", phase]
+            with patch.object(smoke, "check_release") as check, patch("sys.stdout", new_callable=io.StringIO):
+                self.assertEqual(smoke.main(args), 0)
+            check.assert_called_once_with(
+                "https://stage.example.test", SHA, "stage", allow_http=False, expected_phase=phase,
+            )
+        with patch.object(smoke.request, "build_opener") as opener, self.assertRaises(smoke.CheckFailed):
+            smoke.check_release("https://stage.example.test", SHA, "stage", expected_phase="invalid")
+        opener.assert_not_called()
+        with patch("sys.stderr", new_callable=io.StringIO), self.assertRaises(SystemExit):
+            smoke.main(["https://stage.example.test", "--expected-release", SHA, "--expected-phase", "invalid"])
+
     def test_wrong_application_release_readiness_and_extra_fields_fail(self):
         for key, value in (("application", "article-service"), ("release", "b" * 40),
                            ("environment", "local"), ("unexpected", "field")):

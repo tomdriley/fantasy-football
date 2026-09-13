@@ -8,7 +8,7 @@ on:
       - hosting/**
       - infra/azure/**
       - scripts/check_hosted_app.py
-      - tests/test_hosting*.py
+      - tests/test_*hosting*.py
       - requirements*.txt
       - requirements.lock
   workflow_dispatch:
@@ -20,6 +20,17 @@ jobs:
   foundation:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675
+        env:
+          POSTGRES_PASSWORD: local-test-only
+        ports:
+          - "127.0.0.1::5432"
+        options: >-
+          --cpus 1 --memory 512m
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -27,10 +38,13 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.14'
-      - name: Test only the standalone foundation
+      - name: Test the foundation against isolated PostgreSQL
+        env:
+          FFOPT_TEST_POSTGRES_PORT: ${{ job.services.postgres.ports[5432] }}
         run: |
+          test -n "$FFOPT_TEST_POSTGRES_PORT"
           python -m pip install -r requirements-dev.txt -c requirements.lock
-          python -m unittest discover -s tests -p 'test_hosting*.py'
+          python -m unittest discover -s tests -p 'test_*hosting*.py'
       - name: Compile Azure templates without Azure credentials
         run: |
           az bicep install --version v0.47.16

@@ -56,6 +56,7 @@ def fetch(opener: request.OpenerDirector, url: str, content_type: str) -> bytes:
                 raise CheckFailed(f"{parse.urlsplit(url).path}: missing no-store response policy.")
             body = response.read(MAX_RESPONSE_BYTES + 1)
     except error.HTTPError as exc:
+        exc.close()
         raise CheckFailed(f"{parse.urlsplit(url).path}: HTTP {exc.code}; redirects are not accepted.") from exc
     except (error.URLError, OSError) as exc:
         raise CheckFailed(f"{parse.urlsplit(url).path}: connection or TLS check failed.") from exc
@@ -64,12 +65,17 @@ def fetch(opener: request.OpenerDirector, url: str, content_type: str) -> bytes:
     return body
 
 
-def check_release(url: str, release: str, environment: str, *, allow_http: bool = False):
+def check_release(
+    url: str, release: str, environment: str, *,
+    allow_http: bool = False, expected_phase: str = "deployment",
+):
     base = origin(url, allow_http=allow_http)
     if not re.fullmatch(r"(?:[0-9a-f]{40}|development)", release):
         raise CheckFailed("Expected release must be a lowercase commit SHA or development.")
     if environment not in ("local", "stage") or (environment == "stage" and release == "development"):
         raise CheckFailed("Use local or stage; stage requires a commit SHA.")
+    if expected_phase not in ("deployment", "database-readonly"):
+        raise CheckFailed("Expected phase must be deployment or database-readonly.")
     opener = request.build_opener(NoRedirects)
     expected = {
         "/healthz": {"status": "ok"},
@@ -78,16 +84,25 @@ def check_release(url: str, release: str, environment: str, *, allow_http: bool 
             "application": "fantasy-football-hosting",
             "environment": environment,
             "release": release,
-            "phase": "deployment",
+            "phase": expected_phase,
         },
     }
+    if expected_phase == "database-readonly":
+        expected["/fantasy-football/api/sample"] = {
+            "dataset": "hosting-probe-v1",
+            "rows": [
+                {"id": 1, "label": "synthetic-alpha", "value": 10},
+                {"id": 2, "label": "synthetic-beta", "value": 20},
+                {"id": 3, "label": "synthetic-gamma", "value": 30},
+            ],
+        }
     for path, value in expected.items():
         raw = fetch(opener, base + path, "application/json")
         try:
             actual = json.loads(raw)
         except (ValueError, UnicodeDecodeError) as exc:
             raise CheckFailed(f"{path}: invalid JSON response.") from exc
-        if actual != value:
+        if json.dumps(actual, sort_keys=True) != json.dumps(value, sort_keys=True):
             raise CheckFailed(f"{path}: response does not identify the expected deployment.")
     try:
         page = fetch(opener, base + "/fantasy-football/", "text/html").decode("utf-8")
@@ -100,6 +115,8 @@ def check_release(url: str, release: str, environment: str, *, allow_http: bool 
     ):
         if marker not in page:
             raise CheckFailed("Page does not identify the expected deployment or prefix.")
+    if expected_phase == "database-readonly" and 'href="/fantasy-football/api/sample"' not in page:
+        raise CheckFailed("Page does not link to the database sample.")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -107,6 +124,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("url", help="app origin, e.g. https://the-stage-host.azurewebsites.net")
     parser.add_argument("--expected-release", required=True)
     parser.add_argument("--expected-environment", choices=("local", "stage"), default="stage")
+    parser.add_argument("--expected-phase", choices=("deployment", "database-readonly"), default="deployment")
     parser.add_argument("--allow-http", action="store_true", help="permit HTTP for loopback only")
     parser.add_argument("--attempts", type=int, default=1, choices=range(1, 61), metavar="1..60")
     args = parser.parse_args(argv)
@@ -114,6 +132,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             check_release(
                 args.url, args.expected_release, args.expected_environment, allow_http=args.allow_http,
+                expected_phase=args.expected_phase,
             )
         except CheckFailed as exc:
             print(f"Hosting check {attempt + 1}/{args.attempts} failed: {exc}", file=sys.stderr)
