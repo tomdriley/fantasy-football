@@ -206,20 +206,24 @@ a managed-certificate resource is not evidence that it is bound or serving.
 
 ## Cost controls
 
-Subscription budget `production-monthly-150` is monthly **150 in the subscription's
-billing currency (not verified as USD)**, with Owner-role notifications at 80%
+Subscription budget `production-monthly-150` is monthly **USD 150**, with billing
+currency verified by the 2026-09-13 Cost Management response and notifications at 80%
 and 100% actual and 100% forecast. It covers other resource groups too, expires
 2031-09-01 and is **not a spending cap** or automatic shutdown. On reconstruction,
 choose a valid first-of-month start date; do not blindly reuse an expired period.
 
 Private retail-rate audit estimated fixed target core **USD 72.665/month** and
 target baseline **USD 80.965/month plus USD 0–0.50 metric alerts**, before variable
-usage and other resource groups. Old source infrastructure adds roughly
-**USD 57.075/month until deleted**. These are estimates, not billed actuals or
-a guarantee of subscription cost below 150. Observed subscription actuals were
-about **429 in an unconfirmed currency**. Check Cost Management currency, scope,
-time window, accumulated charges and forecast; distinguish historical spend
-from future run rate. Budget alerts can lag.
+usage and other resource groups. The original plan alone cost approximately
+**USD 56.575/month before retirement**; its orphaned DNS zone added USD 0.50.
+These are estimates, not a guarantee of subscription cost below 150.
+Initial actual-cost queries returned **HTTP 429 (throttling), not a cost of 429**.
+A subsequent subscription-wide month-to-date query returned **USD 28.743508**:
+Ingrecog USD 3.243520 and WebResourceGroup2 USD 25.499988. The new target group
+was absent from those returned rows, so delayed charges prevent measuring its
+steady-state run rate from that response. Historical-query access remained
+unavailable. Check time windows, accumulated charges and forecast; distinguish
+historical spend from future run rate. Budget alerts can lag.
 
 Review costs weekly and after migration/deletion: plan capacity, PostgreSQL disk/
 backup, Cosmos requests/storage, private endpoint hours/data, blob versions and
