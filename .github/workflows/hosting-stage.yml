@@ -121,7 +121,7 @@ jobs:
           docker image save "$tag" --output "$review_dir/image.tar"
           printf '%s\n' "$reference" > "$review_dir/reference.txt"
           printf '%s\n' "$EXPECTED_RELEASE" > "$review_dir/release.txt"
-      - name: Retain the exact image privately for publication review
+      - name: Retain the published image for release verification
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: hosting-image-review-${{ github.sha }}

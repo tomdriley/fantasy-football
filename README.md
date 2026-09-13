@@ -198,3 +198,19 @@ timer is never spent re-fetching reference data.
 Value over replacement is an *input* to the claim decision, not the claim order.
 It has no notion of *when* an item can be obtained and, sorted directly, ranks
 kickers and defenses far too high. The optimizer supplies that missing dimension.
+
+## License
+
+Copyright (C) 2026 Tom Riley.
+
+Unless otherwise noted, this project's original source code is licensed under
+the **GNU Affero General Public License, version 3 only** (`AGPL-3.0-only`).
+See [LICENSE](LICENSE) for the full terms.
+
+Commercial use is permitted subject to the license. Modified covered versions
+offered over a network must offer their corresponding source to their users.
+Third-party software, API access and provider data retain their own licenses
+and terms; this license does not grant additional rights to them.
+
+See [source publication and licensing](docs/publication.md) for the release
+scope and the distinction between public source and private runtime data.

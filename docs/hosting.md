@@ -175,9 +175,17 @@ No new `.env` file is needed.
 See [staging infrastructure and release instructions](hosting-azure.md) for the
 prepared Azure/GitHub configuration and explicit deployment procedure.
 
-The repository stays **private**. Only the reviewed hosting-probe image may be
-made public in GHCR. New GHCR packages can default to private independently of
-the repository; package visibility needs explicit verification.
+The owner approved public source publication under AGPL-3.0-only after the
+September 13, 2026 reviews; see [publication scope](publication.md). Source
+visibility does not make runtime credentials, account approval settings, database
+contents or operator artifacts public. New image publication remains a separate
+review gate, and package visibility needs explicit verification.
+
+Actions artifacts in a public repository must not be treated as private.
+The CI workflow deliberately retains unpublished candidate images only for
+manual runs in a private repository. Use a private review workspace or a local
+build for future confidential candidate audits, not a public Actions artifact.
+The release workflow's retained image is the same image it has already published.
 
 Before any publication:
 
