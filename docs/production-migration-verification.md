@@ -135,12 +135,31 @@ Source runtime retirement completed at **05:09:51 UTC**:
   `www.thomasriley.ca-thomasriley-ca`, and
   `article-service.thomasriley.ca-article-service`.
 
-Every retirement was verified absent. **Only `thomasrileyca` storage remains in
-WebResourceGroup2**. The group itself was not deleted. Unrelated resource inventory
+Every retirement was verified absent. At that checkpoint, only `thomasrileyca`
+storage remained in WebResourceGroup2. The group itself was not deleted. Unrelated resource inventory
 was preserved, and private recovery configuration was retained outside Git.
 After retirement, the full public content check, all three served managed
 certificates and the fantasy private-database hosting check passed again; the
 fantasy parent remains Disabled.
+
+### Legacy image-storage retirement
+
+At **12:49:55 UTC on 2026-09-13**, `thomasrileyca` was also deleted after the
+user confirmed external image links did not need to be preserved. Before deletion:
+
+- All eighty migrated images and local/private remote backups were rechecked
+  against the manifest, including hashes, metadata, content settings and tags.
+- Source object names/ETags still matched the backup; no additional containers,
+  snapshots, versions, deleted blobs, file shares, queues or tables were found.
+- All six current apps/slots were checked for legacy storage configuration
+  references; public article data and rendered pages used no legacy Blob URLs.
+
+Deletion was verified against a fresh Azure inventory. **WebResourceGroup2 now
+contains no resources**; its empty resource-group container remains. All protected
+West US 3 and unrelated resources remained present. The twelve public articles,
+website HTTPS and fantasy private-database readiness passed again after deletion.
+Old direct Blob URLs are intentionally no longer supported. Private migration
+backups remain in the West US 3 storage account and outside Git.
 
 ## Recovery, monitoring and cost
 
@@ -157,8 +176,9 @@ Configured USD retail estimates at 730 hours/month:
 - Target fixed costs including the Cosmos private endpoint and two private DNS
   zones: **$80.965/month**, plus approximately $0–$0.50 for metric alerts.
 - Retiring the original source plan and orphaned DNS zone avoids approximately
-  **$57.075/month** of fixed retail costs, plus former Cosmos usage. The retained
-  legacy Blob account remains usage-billed.
+  **$57.075/month** of fixed retail costs, plus former Cosmos usage. Legacy Blob
+  storage was subsequently deleted; charges incurred before deletion may still
+  appear as billing catches up.
 
 Initial Cost Management queries returned HTTP 429. A later successful
 subscription-wide month-to-date query verified USD billing and **$28.743508**
@@ -168,7 +188,6 @@ zero cost, because charges may lag. Historical-query access remained unavailable
 Taxes, final monthly usage and future budget compliance are **not verified**.
 Do not describe the entire subscription as below 150 on fixed estimates alone.
 
-The old public Blob account is retained because external references cannot be
-ruled out. All unrelated Ingrecog/NetworkWatcher resources, backup artifacts and
+All unrelated Ingrecog/NetworkWatcher resources, backup artifacts and
 operator credentials remain untouched. Unrelated README/Yahoo work was not
 included in migration commits.

@@ -8,6 +8,7 @@ on:
       - hosting/**
       - infra/azure/**
       - scripts/check_hosted_app.py
+      - scripts/check_hosting_auth_config.py
       - tests/test_*hosting*.py
       - requirements*.txt
       - requirements.lock
@@ -50,6 +51,8 @@ jobs:
           az bicep install --version v0.47.16
           az bicep build --file infra/azure/main.bicep --stdout > /dev/null
           az bicep build --file infra/azure/bootstrap.bicep --stdout > /dev/null
+          az bicep build --file infra/azure/stage-auth.bicep --stdout > /dev/null
+          az bicep build --file infra/azure/stage-auth-settings.bicep --stdout > /dev/null
           bash -n infra/azure/check-image.sh infra/azure/deploy-stage.sh
       - name: Build and smoke-test the non-root container without publication
         run: |
@@ -57,3 +60,26 @@ jobs:
             -f hosting/Dockerfile --build-arg "RELEASE=$GITHUB_SHA" \
             -t hosting-foundation:ci .
           bash infra/azure/check-image.sh hosting-foundation:ci "$GITHUB_SHA"
+      - name: Save the private manual candidate for layer review
+        if: github.event_name == 'workflow_dispatch' && github.event.repository.private == true
+        shell: bash
+        run: |
+          umask 077
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          image_id=$(docker image inspect hosting-foundation:ci --format '{{.Id}}')
+          [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]]
+          review_dir="$RUNNER_TEMP/hosting-candidate-review"
+          mkdir "$review_dir"
+          docker image save hosting-foundation:ci --output "$review_dir/image.tar"
+          printf '%s\n' "$GITHUB_SHA" > "$review_dir/release.txt"
+          printf '%s\n' 'hosting-foundation:ci' > "$review_dir/reference.txt"
+          printf '%s\n' "$image_id" > "$review_dir/image-id.txt"
+      - name: Retain the private candidate without registry publication
+        if: github.event_name == 'workflow_dispatch' && github.event.repository.private == true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hosting-candidate-review-${{ github.sha }}
+          path: ${{ runner.temp }}/hosting-candidate-review/
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0

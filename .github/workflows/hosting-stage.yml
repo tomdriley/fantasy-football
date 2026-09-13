@@ -22,6 +22,7 @@ on:
         options:
           - deployment
           - database-readonly
+          - authentication-only
       target_app:
         description: For digest-deploy, exact approved fantasy parent app name
         type: string
@@ -145,13 +146,21 @@ jobs:
       APPROVED_APP: ${{ vars.FFOPT_AZURE_APP_NAME }}
       IMAGE_DIGEST: ${{ inputs.image_digest }}
       EXPECTED_PHASE: ${{ inputs.expected_phase }}
+      FFOPT_STAGE_AUTH_LOCK: ${{ vars.FFOPT_AZURE_STAGE_AUTH_LOCK }}
+      FFOPT_STAGE_GOOGLE_CLIENT_ID: ${{ vars.FFOPT_AZURE_STAGE_GOOGLE_CLIENT_ID }}
     steps:
       - name: Validate the exact fantasy target and immutable artifact
         shell: bash
         run: |
           [[ "$EXPECTED_RELEASE" =~ ^[0-9a-f]{40}$ ]]
           [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
-          [[ "$EXPECTED_PHASE" == deployment || "$EXPECTED_PHASE" == database-readonly ]]
+          [[ "$EXPECTED_PHASE" == deployment || "$EXPECTED_PHASE" == database-readonly || "$EXPECTED_PHASE" == authentication-only ]]
+          if [[ "$EXPECTED_PHASE" == authentication-only ]]; then
+            [[ "$FFOPT_STAGE_AUTH_LOCK" == google-allowlist-v1 ]]
+            [[ -n "$FFOPT_STAGE_GOOGLE_CLIENT_ID" ]]
+          else
+            [[ -z "$FFOPT_STAGE_AUTH_LOCK" ]]
+          fi
           [[ "$TARGET_APP" =~ ^[a-z0-9][a-z0-9-]{1,58}[a-z0-9]$ ]]
           [[ -n "$APPROVED_APP" && "$TARGET_APP" == "$APPROVED_APP" ]]
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -163,7 +172,7 @@ jobs:
           mkdir .hosting-anonymous
           trap 'rm -rf -- .hosting-anonymous' EXIT
           docker --config "$GITHUB_WORKSPACE/.hosting-anonymous" pull "$IMAGE@$IMAGE_DIGEST"
-          bash infra/azure/check-image.sh "$IMAGE@$IMAGE_DIGEST" "$EXPECTED_RELEASE"
+          bash infra/azure/check-image.sh "$IMAGE@$IMAGE_DIGEST" "$EXPECTED_RELEASE" "$EXPECTED_PHASE"
       - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: ${{ vars.FFOPT_AZURE_STAGE_CLIENT_ID }}

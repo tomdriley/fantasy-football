@@ -1,0 +1,233 @@
+# Google authentication-only checkpoint
+
+**Prepared for the operator-authorized rollout; not deployed yet.** The operator
+has provisioned the Google Web OAuth client and enabled Key Vault secret; its
+value has not been read here. Initial scoped source security review reported no
+high-confidence vulnerabilities. Private candidate image review and the live
+managed-authentication checks below still precede activation/completion.
+This is managed external sign-in plus a read-only authorization
+probe, not the advisor. No cloud change, image publication or repository disclosure
+is authorized by this document.
+
+The order is: authentication-only → separately approved auth-gated synthetic
+writes → security review → full-repository public-disclosure review → advisor
+migration. Security review of this checkpoint also precedes its first deployment.
+The repository remains private. Existing database and application writes stay
+disabled; the PostgreSQL reader retains SELECT-only privileges.
+
+## Boundary and configuration
+
+Only `FFOPT_HOSTING_PHASE=authentication-only` with
+`FFOPT_HOSTING_ENVIRONMENT=stage` trusts Easy Auth identity. Local and legacy
+phases do not parse identity headers or expose a session endpoint. The existing
+`deployment` and `database-readonly` behavior is unchanged until explicitly
+selecting the new phase. Authentication-only still requires the existing
+read-only database configuration; it does not provision a schema or user.
+
+App Service, not this Python app, implements OAuth, session cookies and provider
+token validation. The app reads only documented `X-MS-CLIENT-PRINCIPAL-IDP` and
+`X-MS-CLIENT-PRINCIPAL-ID` headers, requiring exactly one of each, provider
+`google`, and a bounded ASCII provider subject. Duplicate, malformed, non-Google
+and email-shaped identities fail closed. No claim JSON, names, email addresses,
+provider tokens or OAuth credentials are decoded, returned or used for permission.
+
+**The headers are not independently verifiable credentials.** Azure documents
+that external requests cannot set its identity headers when Easy Auth is enabled.
+This relies on every request passing through the configured App Service Easy Auth
+front end. Do not expose the container directly, disable Easy Auth, add an
+unverified reverse proxy, or run this phase as a public local service. Environment
+and Host checks alone do not establish that boundary. Local header-injection tests
+model the trusted platform, not an authenticated internet client.
+
+The private operator-managed `FFOPT_AUTH_ALLOWED_IDENTITIES` app setting is JSON:
+
+```json
+[{"provider":"google","subject":"PROVIDER_ID_FROM_YOUR_OWN_SESSION_PROBE"}]
+```
+
+Use the exact case-sensitive **provider-issued ID**, never the email, display
+name, `X-MS-CLIENT-PRINCIPAL-NAME`, a client-selected value, or a wildcard.
+The allowlist is immutable in memory for each process. Missing/`[]` permits
+**no protected access**. Invalid configuration fails startup. It contains at
+most 32 identities and has a bounded input size; operator changes restart the app.
+Keep actual subject IDs in private settings, not examples, screenshots, commits,
+workflow logs or public reviews.
+Retaining either the allowlist setting (even `[]`) or Google secret setting while
+changing the phase back to legacy makes the current application fail startup,
+rather than silently serving its old unauthenticated behavior.
+
+| Route | Anonymous | Signed in, unapproved | Allowlisted Google subject |
+| --- | --- | --- | --- |
+| `/healthz`, `/readyz`, `/fantasy-football`, `/fantasy-football/`, `/fantasy-football/api/status` | Technical health/release only | Same | Same |
+| `/fantasy-football/api/session` | 401 | Only own provider/subject and `authorized: false` | Only own identity and `authorized: true` |
+| `/fantasy-football/api/sample` | 401 | 403; no sample query | Exact approved synthetic rows |
+| Any application write method | 405 in the app | 405 | 405 |
+
+Easy Auth can return 401 before anonymous write requests reach the app. Its own
+`/.auth/*` routes implement managed sign-in/logout and are not application write
+APIs. The landing page links to Google sign-in and the session probe; it has no
+protected data. `/readyz` checks the read-only database but exposes only readiness,
+not rows. Application responses are `no-store`; no session response is logged.
+
+## Google and Azure prerequisites (operator action, not routine CI)
+
+1. Create a Google **Web application** OAuth client under the approved project.
+   The operator-provisioned client ID is
+   `581647356928-01v8nbfr0kl7jupumc5pvu7sranlh7vc.apps.googleusercontent.com`
+   (a public identifier, not the secret).
+   Keep the application in **Testing**, without a logo or public publication.
+   Use only `openid`, `profile`, `email`; do not enable Yahoo, Drive, Gmail,
+   Calendar, offline access or other scopes. Configure:
+   - Origin: `https://thomasriley-fantasy-w3-pilot-stage.azurewebsites.net`
+   - Exact callback:
+     `https://thomasriley-fantasy-w3-pilot-stage.azurewebsites.net/.auth/login/google/callback`
+   - Google consent/audience and test users appropriate to the test.
+     **The Google Testing test-user list is not application authorization.**
+     Basic sign-in scopes can bypass that audience restriction; the app allowlist
+     remains mandatory even if Google permits sign-in.
+2. The operator has provisioned and enabled `google-auth-stage-client-secret` in
+   existing Key Vault `tr-ff-w3-kv-fcbc`. It is the default `googleSecretName`
+   parameter in `stage-auth-settings.bicep`; use this exact target for activation.
+   Never read or supply its value as a shell literal, source
+   file, Bicep parameter/default, pipeline variable, logged JSON or browser capture.
+   `GOOGLE_PROVIDER_AUTHENTICATION_SECRET` must be a Key Vault reference, not a
+   literal secret. Confirm its reference resolves using the stage system-assigned
+   identity and verify its sole new grant is Key Vault Secrets User on **that
+   exact secret**. No vault-wide or deployer secret-read grant is needed.
+   Azure documents this setting as slot-sticky. Before activation, verify that
+   property rather than assuming the stage-only settings merge makes it sticky.
+   Azure represents sticky setting names in the **parent**
+   `Microsoft.Web/sites/config/slotConfigNames` resource. These additions do not
+   modify it. As part of the authorized Google activation, the operator may make
+   a **separately reviewed merge** of auth-related sticky names (the Google secret
+   setting, auth phase and subject allowlist), preserving every existing
+   app-setting, connection-string and storage sticky name. This metadata-only
+   exception must leave the parent disabled and publicly blocked, with no parent
+   image/runtime change. Do not broaden routine CI permissions or add a parent
+   write to these templates.
+3. Use only subscription `b9ee5d35-c096-4772-8a56-0529054b4dcf`,
+   resource group `ff-westus3-pilot`, fantasy `stage` slot, region WestUS3.
+   Other apps and database grants are untouched. The parent stays disabled and
+   publicly inaccessible; its sole permitted change is the separately reviewed
+   operator sticky-name merge above. No slot swap is authorized.
+4. After security review, approve the exact source/image publication separately.
+   Review new image contents, especially `hosting/auth.py`. The capability label
+   `io.ffopt.hosting.authentication=google-allowlist-v1` and release/digest checks
+   exclude legacy images; a label is not a substitute for reviewing the artifact.
+5. Set persistent GitHub variable `FFOPT_AZURE_STAGE_AUTH_LOCK=google-allowlist-v1`
+   **before** changing authentication, and set
+   `FFOPT_AZURE_STAGE_GOOGLE_CLIENT_ID` to the approved client ID. Retain this lock
+   across rollback; it is deliberately independent of mutable live auth settings.
+6. Plan a short stage maintenance window. Stop only stage, preserve a private
+   settings/config inventory, and separately review/what-if these additions:
+   - `infra/azure/stage-auth-settings.bicep` merges the three auth app settings,
+     preserves all existing settings, and grants the existing stage identity
+     access only to the operator-provisioned Google secret. Secure parameter
+     `authorization` defaults to `{}` (an empty identity list). Reapplying that default
+     intentionally clears the allowlist; supply the retained private allowlist
+     for subsequent operator changes.
+     The first activation must retain this empty default: the approved Google
+     subject is unknown until signed-in enrollment, so every signed-in user may
+     see only their own session/ID and none may read the protected sample.
+   - `infra/azure/stage-auth.bicep` updates only stage `authsettingsV2`. Required
+     parameter `googleClientId` is not secret. It requires authentication with
+     HTTP 401, except the exact technical public paths, and enables only Google,
+     HTTPS, nonce validation, one-hour sessions, no external redirect allowlist,
+     and no provider token store.
+   Neither template deploys the base app, credentials, database or parent. Do not
+   redeploy `production/fantasy-app.bicep` to enable auth: it replaces app settings.
+7. Before exposing stage, ensure its environment is `stage`, auth phase is set,
+   hosts remain exact, the Key Vault reference resolves, and settings include no
+   override of the baked image release. Select only a reviewed auth-capable image
+   while stage is stopped, after running the same authsettingsV2 preflight.
+   An approved operator must explicitly start stage once that image and its
+   settings are in place; routine CI has restart permission, not start permission.
+   Then verify/redeploy the same image
+   via `expected_phase=authentication-only`. The deployment script checks
+   authsettingsV2 **before the image PATCH and again after hosted verification**.
+   It uses the existing stage-scoped OIDC `config/read` permission, never lists
+   secret settings and never writes auth configuration. Do not expose a running
+   legacy image during the configuration transition.
+
+Routine deployment cannot configure/check the value behind a secret reference;
+that is an operator prerequisite. Its existing `config/write` RBAC action is not
+subresource-specific: the reviewed script narrows writes to the image only, but
+Azure RBAC does not make a compromised deployment identity unable to change
+authsettings. Protect main/workflow approvals and the persistent lock.
+
+## Verification and completion gate
+
+### Private CI candidate when local Docker is unavailable
+
+If local Docker is unavailable (for example, WSL integration is disabled), the
+operator can manually dispatch **Hosting foundation CI** on the exact selected
+source revision before any `build-publish` dispatch. CI tests, compiles, builds
+and smoke-checks `hosting-foundation:ci` without registry publication or Azure
+login. Only a successful **manual dispatch in a private repository** saves and
+uploads `hosting-candidate-review-<source SHA>`, retained for three days.
+Pull-request runs and public repositories do not upload this candidate.
+
+The private artifact contains `image.tar`, `release.txt` (source SHA),
+`reference.txt` (local image tag), and `image-id.txt` (Docker image/config ID).
+Inspect all image layers, configuration, history and metadata using the
+[image disclosure review procedure](hosting-azure.md#gate-1-review-and-authorize-the-narrow-package)
+before approving publication. Do not treat the local image ID as a registry
+manifest digest. A later `build-publish` run rebuilds and can produce different
+bytes: it remains a separate approved publication, and its exact resulting
+digest must still be reviewed and verified before deployment. This candidate
+audit does not approve publishing the repository or its history.
+
+### Application and platform verification
+
+Local validation (no Google credentials or cloud writes):
+
+```sh
+.venv/bin/python -m unittest discover -s tests -p 'test_*hosting*.py'
+bash -n infra/azure/check-image.sh infra/azure/deploy-stage.sh
+az bicep build --file infra/azure/stage-auth.bicep --stdout >/dev/null
+az bicep build --file infra/azure/stage-auth-settings.bicep --stdout >/dev/null
+```
+
+After approved activation, run the credential-free hosted checker with the exact
+release:
+
+```sh
+python3 scripts/check_hosted_app.py \
+  https://thomasriley-fantasy-w3-pilot-stage.azurewebsites.net \
+  --expected-environment stage --expected-release REVIEWED_FULL_COMMIT_SHA \
+  --expected-phase authentication-only
+```
+
+It checks public technical endpoints and requires **401**, without redirects,
+from session/sample requests both anonymous and bearing forged Google `X-MS-*`
+identity headers. A session 200 or sample 403 under forged internet headers is
+failure, not proof that the platform stripped the identity. Never mark this live
+boundary verified merely because mocked/local tests passed.
+
+Manual browser gates then prove: anonymous denied; intended Google login works;
+an empty allowlist shows only your own ID and denies sample access; operator
+independently confirms and allowlists that ID; the same subject is then authorized
+and can read only synthetic rows; a different/unapproved Google subject remains
+denied; sign-out removes access; writes remain disallowed. Capture only sanitized
+outcomes, never cookies, token responses, raw `/.auth/me`, claims or subject IDs.
+The actual Google account's stable platform ID and behavior across sign-out/
+sign-in have not been observed yet. The code intentionally uses documented
+provider-ID headers rather than assuming a particular raw-to-mapped claim name.
+Confirm that ID privately during activation; do not loosen identity validation,
+public-path exclusions, or hosted denial assertions merely to make a probe pass.
+
+Rollback is only to another reviewed **auth-capable** digest with the auth phase,
+allowlist, Easy Auth configuration, Google client and persistent lock retained.
+If none is approved, stop stage rather than restore an unauthenticated legacy
+image or clear the lock. Config drift, denied config reads, wrong client/audience,
+extra exclusions/providers, missing lock or legacy image abort deployment.
+No automatic rollback, production promotion, write checkpoint or advisor work is
+part of successful authentication verification.
+
+## Authoritative contracts
+
+- [Azure identity headers and external-header protection](https://learn.microsoft.com/en-us/azure/app-service/configure-authentication-user-identities)
+- [Azure Google provider, callback and Key Vault secret reference](https://learn.microsoft.com/en-us/azure/app-service/configure-authentication-provider-google)
+- [App Service authsettingsV2 schema](https://learn.microsoft.com/en-us/azure/templates/microsoft.web/sites/slots/config-authsettingsv2)
+- [Parent-scoped sticky setting names](https://learn.microsoft.com/en-us/azure/templates/microsoft.web/sites/config-slotconfignames)
+- [Google OAuth consent/testing exceptions](https://developers.google.com/identity/protocols/oauth2/production-readiness/policy-compliance)

@@ -3,23 +3,23 @@
 This is a small deployment probe, **not the hosted fantasy advisor**. The existing
 CLI, API, SQLite stores and React application are unchanged.
 
-The [live staging probe](https://thomasriley-fantasy-football-stage.azurewebsites.net/fantasy-football/)
-passed an A/B/A deployment-and-rollback rehearsal on September 12, 2026. The
-production endpoint remains blocked and the existing website has no new routing.
-See the [verified release ledger](hosting-azure.md#verified-live-target).
+The original staging probe passed an A/B/A deployment-and-rollback rehearsal on
+September 12, 2026; see the [historical release ledger](hosting-azure.md#verified-live-target).
+The retained [WestUS3 stage](https://thomasriley-fantasy-w3-pilot-stage.azurewebsites.net/fantasy-football/)
+uses private, synthetic read-only PostgreSQL. Its production parent remains
+disabled and publicly blocked. See [current operations](production-operations.md).
 
-The implementation covers only the first checkpoint:
+The checkpoints remain deliberately separate:
 
 1. Deploy the harmless test app to **fantasy staging**, verify the exact release,
    and rehearse deployment rollback.
-2. Later: private PostgreSQL with an application role that can only read synthetic rows.
-3. Later: Azure-managed sign-in and a small invited-user allowlist, still without
-   application database writes.
+2. Private PostgreSQL with an application role that can only read synthetic rows.
+3. Locally prepared, not yet enabled: Azure-managed Google sign-in and a small
+   provider/subject allowlist, still without application database writes.
 4. Later: one authenticated synthetic write and a database restore drill.
 
-The database-readonly mode is implemented for synthetic canaries; this does not
-mean the existing East US staging slot has been connected to a database.
-Authentication and application-write checkpoints are not implemented. There
+The [Google authentication-only checkpoint](hosting-authentication.md) is
+implemented locally but not enabled in Azure; application writes are not implemented. There
 are no workers, league configuration, real data, or write routes.
 No website proxy, production deployment, slot swap, or repository publication is
 part of this checkpoint.
@@ -55,7 +55,8 @@ oversized responses and a healthy response from the wrong app.
 | `FFOPT_HOSTING_ENVIRONMENT` | `local` or `stage`; the image defaults to `stage`. Production is deliberately unsupported. |
 | `FFOPT_HOSTING_RELEASE` | Full lowercase commit SHA baked into the image using build argument `RELEASE`. Local development may use `development`. Do not override the image's release in Azure settings. |
 | `FFOPT_HOSTING_ALLOWED_HOSTS` | Comma-separated exact DNS names/IPv4 hosts, without schemes, ports, or wildcards. Required in staging. Use the slot's actual Azure hostname. |
-| `FFOPT_HOSTING_PHASE` | `deployment` (default) or `database-readonly`. The latter requires explicit database settings and never creates a schema. |
+| `FFOPT_HOSTING_PHASE` | `deployment` (default), `database-readonly`, or stage-only `authentication-only`. The latter two require explicit read-only database settings and never create a schema. |
+| `FFOPT_AUTH_ALLOWED_IDENTITIES` | Private JSON provider/subject allowlist for `authentication-only`; missing/empty denies all protected access. See the [auth boundary and operator gates](hosting-authentication.md). |
 
 Local defaults permit `localhost` and `127.0.0.1`. Stage refuses a missing
 hostname, a local test hostname, or the `development` release. These checks are
