@@ -35,6 +35,12 @@ resource auth 'Microsoft.Web/sites/slots/config@2024-11-01' = {
       ]
     }
     identityProviders: {
+      azureActiveDirectory: { enabled: false }
+      facebook: { enabled: false }
+      gitHub: { enabled: false }
+      twitter: { enabled: false }
+      legacyMicrosoftAccount: { enabled: false }
+      apple: { enabled: false }
       google: {
         enabled: true
         registration: {

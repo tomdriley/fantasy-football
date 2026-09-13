@@ -43,6 +43,17 @@ class TestHostingAuthConfig(unittest.TestCase):
         self.assertEqual(config.PUBLIC_PATHS, PUBLIC_PATHS)
         self.assertEqual(config.AUTH_LOCK, AUTH_CAPABILITY)
 
+    def test_azure_unused_provider_defaults_must_be_explicitly_disabled(self):
+        payload = approved_config()
+        for name in ("azureActiveDirectory", "facebook", "gitHub", "twitter", "legacyMicrosoftAccount", "apple"):
+            payload["properties"]["identityProviders"][name] = {
+                "enabled": False, "registration": {}, "login": {},
+            }
+        config.validate_config(payload, config.AUTH_PHASE, CLIENT_ID, AUTH_CAPABILITY)
+        payload["properties"]["identityProviders"]["facebook"]["enabled"] = True
+        with self.assertRaises(config.InvalidAuthConfig):
+            config.validate_config(payload, config.AUTH_PHASE, CLIENT_ID, AUTH_CAPABILITY)
+
     def test_legacy_deployment_only_before_authentication_and_lock(self):
         disabled = {"properties": {"platform": {"enabled": False}}}
         for phase in ("deployment", "database-readonly"):
@@ -142,11 +153,15 @@ class TestHostingAuthConfig(unittest.TestCase):
             self.assertIn(f"'{path}'", auth)
         self.assertNotIn("'/fantasy-football/api/sample'", auth)
         self.assertNotIn("'/fantasy-football/api/session'", auth)
+        for name in ("azureActiveDirectory", "facebook", "gitHub", "twitter", "legacyMicrosoftAccount", "apple"):
+            self.assertIn(name + ": { enabled: false }", auth)
         self.assertIn("scope: secret", settings)
         self.assertIn("param googleSecretName string = 'google-auth-stage-client-secret'", settings)
         self.assertIn("name: googleSecretName", settings)
         self.assertIn("principalId: stage.identity.principalId", settings)
-        self.assertIn("properties: union(list('${stage.id}/config/appsettings'", settings)
+        self.assertIn("@secure()\nparam existingAppSettings object", settings)
+        self.assertIn("properties: union(existingAppSettings,", settings)
+        self.assertNotIn("list('${stage.id}/config/appsettings'", settings)
         self.assertIn("FFOPT_HOSTING_PHASE: 'authentication-only'", settings)
         self.assertIn("@Microsoft.KeyVault(SecretUri=", settings)
         self.assertNotIn("FFOPT_DB_", settings)

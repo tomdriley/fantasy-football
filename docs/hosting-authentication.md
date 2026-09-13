@@ -123,6 +123,13 @@ not rows. Application responses are `no-store`; no session response is logged.
    - `infra/azure/stage-auth-settings.bicep` merges the three auth app settings,
      preserves all existing settings, and grants the existing stage identity
      access only to the operator-provisioned Google secret. Secure parameter
+     `existingAppSettings` requires a fresh, privately captured stage settings
+     snapshot supplied by the operator, never committed or logged. Reading the
+     same app-settings resource inside its own deployment creates an ARM circular
+     dependency, so the template does not perform that self-read. Capture/check
+     the snapshot while stage is stopped, and verify all unrelated settings
+     remain equal after deployment.
+     Secure parameter
      `authorization` defaults to `{}` (an empty identity list). Reapplying that default
      intentionally clears the allowlist; supply the retained private allowlist
      for subsequent operator changes.
@@ -134,6 +141,10 @@ not rows. Application responses are `no-store`; no session response is logged.
      HTTP 401, except the exact technical public paths, and enables only Google,
      HTTPS, nonce validation, one-hour sessions, no external redirect allowlist,
      and no provider token store.
+     It explicitly disables all other built-in providers: Azure otherwise
+     serializes omitted providers as enabled even with empty registrations.
+     The deployment checker rejects those defaults rather than relaxing the
+     Google-only policy.
    Neither template deploys the base app, credentials, database or parent. Do not
    redeploy `production/fantasy-app.bicep` to enable auth: it replaces app settings.
 7. Before exposing stage, ensure its environment is `stage`, auth phase is set,

@@ -1,5 +1,9 @@
 targetScope = 'resourceGroup'
 
+@description('Fresh private stage app-settings snapshot from the approved operator; preserve every unrelated setting.')
+@secure()
+param existingAppSettings object
+
 @description('Private provider/subject allowlist; empty denies all sample access. No emails or tokens.')
 @secure()
 param authorization object = {}
@@ -42,7 +46,7 @@ resource googleSecretGrant 'Microsoft.Authorization/roleAssignments@2022-04-01' 
 resource settings 'Microsoft.Web/sites/slots/config@2024-11-01' = {
   parent: stage
   name: 'appsettings'
-  properties: union(list('${stage.id}/config/appsettings', '2024-11-01').properties, {
+  properties: union(existingAppSettings, {
     FFOPT_HOSTING_PHASE: 'authentication-only'
     FFOPT_AUTH_ALLOWED_IDENTITIES: string(authorization.?identities ?? [])
     GOOGLE_PROVIDER_AUTHENTICATION_SECRET: '@Microsoft.KeyVault(SecretUri=https://${vault.name}.vault.azure.net/secrets/${secret.name})'
