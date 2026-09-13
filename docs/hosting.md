@@ -14,12 +14,14 @@ The checkpoints remain deliberately separate:
 1. Deploy the harmless test app to **fantasy staging**, verify the exact release,
    and rehearse deployment rollback.
 2. Private PostgreSQL with an application role that can only read synthetic rows.
-3. Locally prepared, not yet enabled: Azure-managed Google sign-in and a small
-   provider/subject allowlist, still without application database writes.
+3. Deployed September 13, 2026: Azure-managed Google sign-in with an empty
+   provider/subject allowlist, ready for the first user login; no database writes.
 4. Later: one authenticated synthetic write and a database restore drill.
 
 The [Google authentication-only checkpoint](hosting-authentication.md) is
-implemented locally but not enabled in Azure; application writes are not implemented. There
+enabled in Azure and has passed live anonymous/forged-header checks; actual
+Google account login and approval remain manual gates. Application writes are
+not implemented. There
 are no workers, league configuration, real data, or write routes.
 No website proxy, production deployment, slot swap, or repository publication is
 part of this checkpoint.

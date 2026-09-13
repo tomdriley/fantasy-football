@@ -1,7 +1,7 @@
 # Azure staging: hosting checkpoint 1
 
-For the current WestUS3 Google auth-only preparation and non-downgrade
-deployment gates, see [Authentication-only](hosting-authentication.md).
+For the deployed WestUS3 Google auth-only release, verified workflow/image ledger
+and non-downgrade gates, see [Authentication-only](hosting-authentication.md).
 The checkpoint-1 records below are historical; they do not authorize restoring
 an unauthenticated image/configuration after the auth checkpoint is enabled.
 

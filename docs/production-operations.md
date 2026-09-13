@@ -35,8 +35,9 @@ into production. Fantasy's parent is intentionally stopped/Disabled, not an outa
 
 ## Safe changes and reconstruction
 
-The locally prepared [Google authentication-only checkpoint](hosting-authentication.md)
-uses separate `infra/azure/stage-auth*.bicep` additions. After activation, never
+The deployed [Google authentication-only checkpoint](hosting-authentication.md)
+uses separate `infra/azure/stage-auth*.bicep` additions. Its empty allowlist awaits
+the first user login and separate operator approval. Never
 restore the legacy `database-readonly` app settings or an unauthenticated image.
 Keep Easy Auth, the subject allowlist and the independent deployment lock across
 rollback. These base reconstruction templates are not an auth rollback mechanism.
