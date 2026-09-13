@@ -141,6 +141,10 @@ not rows. Application responses are `no-store`; no session response is logged.
      HTTP 401, except the exact technical public paths, and enables only Google,
      HTTPS, nonce validation, one-hour sessions, no external redirect allowlist,
      and no provider token store.
+     It explicitly disables all other built-in providers: Azure otherwise
+     serializes omitted providers as enabled even with empty registrations.
+     The deployment checker rejects those defaults rather than relaxing the
+     Google-only policy.
    Neither template deploys the base app, credentials, database or parent. Do not
    redeploy `production/fantasy-app.bicep` to enable auth: it replaces app settings.
 7. Before exposing stage, ensure its environment is `stage`, auth phase is set,
