@@ -9,6 +9,8 @@ import re
 import sys
 
 AUTH_PHASE = "authentication-only"
+WRITE_PHASE = "authenticated-write"
+AUTH_PHASES = (AUTH_PHASE, WRITE_PHASE)
 AUTH_LOCK = "google-allowlist-v1"
 SECRET_SETTING = "GOOGLE_PROVIDER_AUTHENTICATION_SECRET"
 PUBLIC_PATHS = {
@@ -34,7 +36,7 @@ def section(parent, key):
 def validate_config(payload, phase: str, client_id: str = "", auth_lock: str = ""):
     if not isinstance(payload, dict):
         raise InvalidAuthConfig("Authentication configuration must be an object.")
-    if phase not in ("deployment", "database-readonly", AUTH_PHASE):
+    if phase not in ("deployment", "database-readonly", *AUTH_PHASES):
         raise InvalidAuthConfig("Invalid hosting phase.")
     if auth_lock not in ("", AUTH_LOCK):
         raise InvalidAuthConfig("Invalid authentication checkpoint lock.")
@@ -42,7 +44,7 @@ def validate_config(payload, phase: str, client_id: str = "", auth_lock: str = "
     platform = section(properties, "platform")
     providers = section(properties, "identityProviders")
     google = section(providers, "google") if providers.get("google") is not None else {}
-    if phase != AUTH_PHASE:
+    if phase not in AUTH_PHASES:
         if auth_lock or platform.get("enabled") is not False or google.get("enabled") is True:
             raise InvalidAuthConfig("Legacy deployment is forbidden once authentication is enabled or locked.")
         return
@@ -98,7 +100,7 @@ def validate_config(payload, phase: str, client_id: str = "", auth_lock: str = "
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--expected-phase", required=True, choices=("deployment", "database-readonly", AUTH_PHASE))
+    parser.add_argument("--expected-phase", required=True, choices=("deployment", "database-readonly", *AUTH_PHASES))
     parser.add_argument("--google-client-id", default="")
     parser.add_argument("--auth-lock", default="")
     args = parser.parse_args(argv)

@@ -14,15 +14,17 @@ The checkpoints remain deliberately separate:
 1. Deploy the harmless test app to **fantasy staging**, verify the exact release,
    and rehearse deployment rollback.
 2. Private PostgreSQL with an application role that can only read synthetic rows.
-3. Deployed September 13, 2026: Azure-managed Google sign-in with an empty
-   provider/subject allowlist, ready for the first user login; no database writes.
-4. Later: one authenticated synthetic write and a database restore drill.
+3. Deployed September 13, 2026: Azure-managed Google sign-in. The user confirmed
+   login, private enrollment/approval, sample access and logout; no live database writes.
+4. [Protected synthetic marker](hosting-write.md): implemented locally, awaiting
+   independent review, private candidate CI and approved deployment. A database
+   restore drill remains a separate gate.
 
 The [Google authentication-only checkpoint](hosting-authentication.md) is
-enabled in Azure and has passed live anonymous/forged-header checks; actual
-Google account login and approval remain manual gates. Application writes are
-not implemented. There
-are no workers, league configuration, real data, or write routes.
+enabled in Azure and has passed live anonymous/forged-header checks and the
+user's browser checkpoint. The new `authenticated-write` phase enables only one
+immutable synthetic marker per approved account when explicitly configured;
+it is not yet deployed. There are no workers, league configuration or real data.
 No website proxy, production deployment, slot swap, or repository publication is
 part of this checkpoint.
 
@@ -57,8 +59,9 @@ oversized responses and a healthy response from the wrong app.
 | `FFOPT_HOSTING_ENVIRONMENT` | `local` or `stage`; the image defaults to `stage`. Production is deliberately unsupported. |
 | `FFOPT_HOSTING_RELEASE` | Full lowercase commit SHA baked into the image using build argument `RELEASE`. Local development may use `development`. Do not override the image's release in Azure settings. |
 | `FFOPT_HOSTING_ALLOWED_HOSTS` | Comma-separated exact DNS names/IPv4 hosts, without schemes, ports, or wildcards. Required in staging. Use the slot's actual Azure hostname. |
-| `FFOPT_HOSTING_PHASE` | `deployment` (default), `database-readonly`, or stage-only `authentication-only`. The latter two require explicit read-only database settings and never create a schema. |
-| `FFOPT_AUTH_ALLOWED_IDENTITIES` | Private JSON provider/subject allowlist for `authentication-only`; missing/empty denies all protected access. See the [auth boundary and operator gates](hosting-authentication.md). |
+| `FFOPT_HOSTING_PHASE` | `deployment` (default), `database-readonly`, or stage-only `authentication-only` / `authenticated-write`. All database phases retain the read-only reader; only the write phase adds a separate writer. Startup never creates a schema. |
+| `FFOPT_AUTH_ALLOWED_IDENTITIES` | Private JSON provider/subject allowlist for both authenticated phases; missing/empty denies all protected access. See the [auth boundary and operator gates](hosting-authentication.md). |
+| `FFOPT_WRITE_DB_*` | Separate credentials/settings accepted only in `authenticated-write`; see the [write contract and operator procedure](hosting-write.md). Never repurpose the reader role. |
 
 Local defaults permit `localhost` and `127.0.0.1`. Stage refuses a missing
 hostname, a local test hostname, or the `development` release. These checks are
@@ -72,8 +75,9 @@ configuration safeguards, **not authentication**.
 | `/healthz` | Process liveness: `{"status":"ok"}` |
 | `/readyz` | Ready to serve this dependency-free probe: `{"status":"ready"}` |
 
-GET and HEAD are supported. Other methods and advertised request bodies are
-rejected. Unrelated routes, including the real advisor API, are absent. Requests
+GET and HEAD are supported. Except for the new phase's single protected
+[synthetic marker POST](hosting-write.md), other methods and advertised request
+bodies are rejected. Unrelated routes, including the real advisor API, are absent. Requests
 and responses do not disclose arbitrary environment variables. Proxy headers
 are not trusted to construct redirects.
 

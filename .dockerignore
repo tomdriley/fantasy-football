@@ -2,11 +2,17 @@
 !requirements.txt
 !requirements.lock
 !hosting/
+hosting/**
 !hosting/__init__.py
 !hosting/app.py
 !hosting/auth.py
 !hosting/database.py
 !hosting/sample.py
+!hosting/write.py
+!hosting/write_database.py
 !hosting/static/
+hosting/static/**
 !hosting/static/index.html
+!hosting/static/test-write.html
+!hosting/static/test-write.js
 !hosting/Dockerfile

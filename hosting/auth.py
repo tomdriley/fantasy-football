@@ -10,7 +10,10 @@ from fastapi.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 AUTH_PHASE = "authentication-only"
+WRITE_PHASE = "authenticated-write"
+AUTH_PHASES = (AUTH_PHASE, WRITE_PHASE)
 AUTH_CAPABILITY = "google-allowlist-v1"
+WRITE_CAPABILITY = "synthetic-marker-v1"
 PUBLIC_PATHS = frozenset({
     "/healthz", "/readyz", "/fantasy-football", "/fantasy-football/",
     "/fantasy-football/api/status",

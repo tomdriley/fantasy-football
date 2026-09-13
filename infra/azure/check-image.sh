@@ -5,7 +5,7 @@ image=${1:?image reference required}
 release=${2:?expected release required}
 phase=${3-deployment}
 fail() { printf '%s\n' "$1" >&2; exit 1; }
-[[ "$phase" == deployment || "$phase" == database-readonly || "$phase" == authentication-only ]] \
+[[ "$phase" == deployment || "$phase" == database-readonly || "$phase" == authentication-only || "$phase" == authenticated-write ]] \
   || fail 'Invalid expected hosting phase.'
 [[ "$release" =~ ^[0-9a-f]{40}$ ]] || fail 'Expected release must be a lowercase full commit SHA.'
 [[ "$(docker image inspect "$image" --format '{{.Config.User}}')" == '10001:10001' ]] \
@@ -14,9 +14,13 @@ fail() { printf '%s\n' "$1" >&2; exit 1; }
   || fail 'Image must target amd64.'
 [[ "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" == "$release" ]] \
   || fail 'Image revision label does not match the expected release.'
-if [[ "$phase" == authentication-only ]]; then
+if [[ "$phase" == authentication-only || "$phase" == authenticated-write ]]; then
   [[ "$(docker image inspect "$image" --format '{{index .Config.Labels "io.ffopt.hosting.authentication"}}')" == google-allowlist-v1 ]] \
     || fail 'Legacy images cannot be deployed to the authentication checkpoint.'
+fi
+if [[ "$phase" == authenticated-write ]]; then
+  [[ "$(docker image inspect "$image" --format '{{index .Config.Labels "io.ffopt.hosting.write"}}')" == synthetic-marker-v1 ]] \
+    || fail 'The image lacks the reviewed synthetic write capability.'
 fi
 
 container="hosting-probe-${GITHUB_RUN_ID:-local}-$$"

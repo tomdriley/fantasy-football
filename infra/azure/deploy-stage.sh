@@ -6,18 +6,24 @@ release=${2:?expected release required}
 digest=${3:?approved image digest required}
 phase=${4-deployment}
 auth_lock=${FFOPT_STAGE_AUTH_LOCK:-}
+write_lock=${FFOPT_STAGE_WRITE_LOCK:-}
 google_client_id=${FFOPT_STAGE_GOOGLE_CLIENT_ID:-}
 fail() { printf '%s\n' "$1" >&2; exit 1; }
 [[ "$app" =~ ^[a-z0-9][a-z0-9-]{1,58}[a-z0-9]$ ]] || fail 'Invalid fantasy app name.'
 [[ "$app" == thomasriley-fantasy-w3-pilot ]] || fail 'Only the approved WestUS3 fantasy pilot is deployable.'
 [[ "$release" =~ ^[0-9a-f]{40}$ ]] || fail 'Expected release must be a lowercase full commit SHA.'
 [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'An immutable sha256 image digest is required.'
-[[ "$phase" == deployment || "$phase" == database-readonly || "$phase" == authentication-only ]] \
+[[ "$phase" == deployment || "$phase" == database-readonly || "$phase" == authentication-only || "$phase" == authenticated-write ]] \
   || fail 'Invalid expected hosting phase.'
-if [[ "$phase" == authentication-only ]]; then
+if [[ "$phase" == authentication-only || "$phase" == authenticated-write ]]; then
   [[ "$auth_lock" == google-allowlist-v1 ]] || fail 'Authentication deployment requires the persistent checkpoint lock.'
 else
   [[ -z "$auth_lock" ]] || fail 'The authentication checkpoint lock forbids legacy deployments.'
+fi
+if [[ "$phase" == authenticated-write ]]; then
+  [[ "$write_lock" == synthetic-marker-v1 ]] || fail 'Write deployment requires the persistent write checkpoint lock.'
+else
+  [[ -z "$write_lock" ]] || fail 'Remove writer credentials and phase while stopped before releasing the write lock.'
 fi
 phase_args=()
 if [[ "$phase" != deployment ]]; then
@@ -39,9 +45,13 @@ host=$(az rest --method get --url "$slot?$api" --query properties.defaultHostNam
 [[ "$host" =~ ^[a-z0-9-]+(\.[a-z0-9-]+)*\.azurewebsites\.net$ ]] \
   || fail 'Azure did not return an expected App Service hostname.'
 verify_auth
-if [[ "$phase" == authentication-only ]]; then
+if [[ "$phase" == authentication-only || "$phase" == authenticated-write ]]; then
   [[ "$(docker image inspect "$image" --format '{{index .Config.Labels "io.ffopt.hosting.authentication"}}')" == google-allowlist-v1 ]] \
     || fail 'Legacy images cannot be deployed to the authentication checkpoint.'
+fi
+if [[ "$phase" == authenticated-write ]]; then
+  [[ "$(docker image inspect "$image" --format '{{index .Config.Labels "io.ffopt.hosting.write"}}')" == synthetic-marker-v1 ]] \
+    || fail 'The image lacks the reviewed synthetic write capability.'
 fi
 previous=$(az rest --method get --url "$slot/config/web?$api" --query properties.linuxFxVersion --output tsv)
 if [[ "$previous" =~ ^DOCKER\|ghcr.io/tomdriley/fantasy-football-hosting@sha256:[0-9a-f]{64}$ ]]; then
