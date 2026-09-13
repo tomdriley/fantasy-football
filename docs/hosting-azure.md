@@ -1,9 +1,9 @@
 # Azure staging: hosting checkpoint 1
 
-For the deployed WestUS3 Google auth-only release, verified workflow/image ledger
+For the original WestUS3 Google auth-only release, verified workflow/image ledger
 and non-downgrade gates, see [Authentication-only](hosting-authentication.md).
-For the local-only next checkpoint, its separate writer role/configuration,
-candidate-review gates and stopped-slot auth-safe rollback, see
+For the currently deployed writer checkpoint, successful CI/digest ledger,
+pending user button test and stopped-slot auth-safe rollback, see
 [Protected synthetic marker](hosting-write.md). Do not apply historical settings
 or empty authorization defaults over the enrolled Google allowlist.
 The checkpoint-1 records below are historical; they do not authorize restoring

@@ -3,18 +3,20 @@
 **Deployed September 13, 2026; user browser checkpoint subsequently confirmed.**
 The user confirmed Google login, private enrollment/approval, protected sample
 and logout. The approved provider/subject remains only in private stage settings.
-The [protected synthetic write implementation](hosting-write.md) is local only;
-it does not change the running authentication-only release.
+The [protected synthetic write checkpoint](hosting-write.md) is now deployed
+with exactly the same enrolled identity and managed-auth configuration; its
+first authenticated button/duplicate/logout test remains pending.
 **Do not reapply the auth settings template's default empty authorization over
 the currently enrolled allowlist.** Use the dedicated writer snapshot template
 for the next checkpoint.
 
 ### Original deployment evidence (before enrollment)
 
-Managed authentication and the live anonymous/forged-header boundary are verified.
-The initial allowlist remains **empty**: a signed-in account can see only its own
-session identity, not the synthetic sample. Actual Google account sign-in,
-callback completion, enrollment, approval and sign-out have **not** been performed.
+At initial deployment, managed authentication and the anonymous/forged-header
+boundary were verified. The allowlist was **empty** at that time: a signed-in
+account could see only its own session identity, not the synthetic sample.
+Google sign-in, callback completion, enrollment, approval and sign-out were
+subsequently confirmed by the user as noted above.
 The operator-provisioned Key Vault reference resolves; its secret value was never
 read or logged during this rollout. Scoped source and private candidate
 security/disclosure reviews reported no high-confidence vulnerabilities.
@@ -25,13 +27,14 @@ image publication or repository disclosure.
 The order is: authentication-only → separately approved auth-gated synthetic
 writes → security review → full-repository public-disclosure review → advisor
 migration. Security review of this checkpoint also precedes its first deployment.
-The repository remains private. Existing database and application writes stay
-disabled; the PostgreSQL reader retains SELECT-only privileges.
+The repository remains private. Authentication-only mode keeps database and
+application writes disabled; the PostgreSQL reader retains SELECT-only privileges
+in both checkpoints. The subsequent write phase adds only its isolated marker role.
 
-## Verified deployment record
+## Historical authentication-only deployment record
 
 - Target: `thomasriley-fantasy-w3-pilot/stage` in `ff-westus3-pilot`, WestUS3.
-- Running image release: `d471de3e65084373a4b3ea9984c108029e72681f`.
+- Original image release: `d471de3e65084373a4b3ea9984c108029e72681f`.
 - Immutable public **hosting-only** image:
   `ghcr.io/tomdriley/fantasy-football-hosting@sha256:3728be4b5d5951d575a040861d45d509b715bf4d3f60b889906b7c392f6565dc`.
 - Source implementation `2e1bdf4c570d65210dc1dcf9903c9c1bb751c7fb` merged through
