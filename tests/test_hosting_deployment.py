@@ -9,16 +9,16 @@ import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 BASH = shutil.which("bash")
-APP = "fantasy-probe"
+APP = "thomasriley-fantasy-w3-pilot"
 SHA = "a" * 40
 DIGEST = "sha256:" + "b" * 64
 PACKAGE = "ghcr.io/tomdriley/fantasy-football-hosting"
 IMAGE = f"{PACKAGE}@{DIGEST}"
 CONTAINER_ID = "d" * 64
-HOST = "fantasy-stage-unique.eastus-01.azurewebsites.net"
+HOST = "fantasy-stage-unique.westus3-01.azurewebsites.net"
 SLOT = (
     "/subscriptions/b9ee5d35-c096-4772-8a56-0529054b4dcf"
-    f"/resourceGroups/WebResourceGroup2/providers/Microsoft.Web/sites/{APP}/slots/stage"
+    f"/resourceGroups/ff-westus3-pilot/providers/Microsoft.Web/sites/{APP}/slots/stage"
 )
 API = "?api-version=2024-11-01"
 
@@ -148,6 +148,8 @@ class TestHostingDeployment(unittest.TestCase):
 
     def test_bad_deployment_inputs_never_reach_azure(self):
         cases = [
+            ["thomasriley-fantasy-football", SHA, DIGEST],
+            ["thomasriley-blog-w3-pilot", SHA, DIGEST],
             ["blog/slots/production", SHA, DIGEST],
             ["fantasy-probe;echo unexpected", SHA, DIGEST],
             [APP, SHA.upper(), DIGEST],
@@ -362,7 +364,7 @@ class TestHostingDeployment(unittest.TestCase):
         workflow = self.workflow("hosting-stage.yml")
         phase = workflow["on"]["workflow_dispatch"]["inputs"]["expected_phase"]
         self.assertEqual(phase["type"], "choice")
-        self.assertEqual(phase["default"], "deployment")
+        self.assertEqual(phase["default"], "database-readonly")
         self.assertEqual(phase["options"], ["deployment", "database-readonly"])
         deploy = workflow["jobs"]["digest-deploy"]
         self.assertEqual(deploy["env"]["EXPECTED_PHASE"], "${{ inputs.expected_phase }}")
@@ -393,8 +395,22 @@ class TestHostingDeployment(unittest.TestCase):
         self.assertEqual(template.count("kind: appKind"), 2)
         self.assertNotIn("kind: 'app,linux,container'", template)
 
+    def test_pilot_template_preserves_database_settings_and_disabled_parent(self):
+        template = (ROOT / "infra/azure/main.bicep").read_text()
+        self.assertIn("@allowed(['thomasriley-fantasy-w3-pilot'])", template)
+        self.assertIn("name: 'ff-w3-pilot-plan'", template)
+        self.assertEqual(template.count("location: 'westus3'"), 2)
+        self.assertIn("enabled: false", template)
+        self.assertIn("properties: union(list('${stage.id}/config/appsettings'", template)
+        self.assertNotIn("WebResourceGroup2", template)
+        self.assertNotIn("ASP-WRG3-2", template)
+
     def test_federation_matches_the_repository_immutable_subject(self):
         template = (ROOT / "infra/azure/bootstrap.bicep").read_text()
+        self.assertIn("location: 'westus3'", template)
+        self.assertIn("@allowed(['thomasriley-fantasy-w3-pilot'])", template)
+        self.assertIn("scope: stage", template)
+        self.assertNotIn("'Microsoft.Web/sites/write'", template)
         self.assertIn(
             "subject: 'repo:tomdriley@17971412/fantasy-football@1355269013:ref:refs/heads/main'",
             template,

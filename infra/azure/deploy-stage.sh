@@ -7,6 +7,7 @@ digest=${3:?approved image digest required}
 phase=${4-deployment}
 fail() { printf '%s\n' "$1" >&2; exit 1; }
 [[ "$app" =~ ^[a-z0-9][a-z0-9-]{1,58}[a-z0-9]$ ]] || fail 'Invalid fantasy app name.'
+[[ "$app" == thomasriley-fantasy-w3-pilot ]] || fail 'Only the approved WestUS3 fantasy pilot is deployable.'
 [[ "$release" =~ ^[0-9a-f]{40}$ ]] || fail 'Expected release must be a lowercase full commit SHA.'
 [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'An immutable sha256 image digest is required.'
 [[ "$phase" == deployment || "$phase" == database-readonly ]] || fail 'Invalid expected hosting phase.'
@@ -16,7 +17,7 @@ if [[ "$phase" == database-readonly ]]; then
 fi
 
 subscription=b9ee5d35-c096-4772-8a56-0529054b4dcf
-slot="/subscriptions/$subscription/resourceGroups/WebResourceGroup2/providers/Microsoft.Web/sites/$app/slots/stage"
+slot="/subscriptions/$subscription/resourceGroups/ff-westus3-pilot/providers/Microsoft.Web/sites/$app/slots/stage"
 api='api-version=2024-11-01'
 image="ghcr.io/tomdriley/fantasy-football-hosting@$digest"
 

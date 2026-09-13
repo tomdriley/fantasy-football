@@ -17,7 +17,7 @@ on:
       expected_phase:
         description: For digest-deploy, expected hosted application phase
         required: true
-        default: deployment
+        default: database-readonly
         type: choice
         options:
           - deployment

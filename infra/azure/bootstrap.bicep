@@ -1,6 +1,7 @@
 targetScope = 'resourceGroup'
 
-@description('The approved fantasy-only parent created by main.bicep.')
+@description('The existing fantasy-only WestUS3 pilot parent.')
+@allowed(['thomasriley-fantasy-w3-pilot'])
 @minLength(3)
 @maxLength(60)
 param appName string
@@ -16,7 +17,7 @@ resource stage 'Microsoft.Web/sites/slots@2024-11-01' existing = {
 
 resource deployer 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' = {
   name: '${appName}-stage-deployer'
-  location: 'eastus'
+  location: 'westus3'
 }
 
 resource federation 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2024-11-30' = {

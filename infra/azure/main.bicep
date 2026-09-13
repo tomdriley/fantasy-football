@@ -1,6 +1,7 @@
 targetScope = 'resourceGroup'
 
-@description('New, approved fantasy-only parent name; never an existing blog app.')
+@description('Approved fantasy-only WestUS3 pilot parent; production remains disabled.')
+@allowed(['thomasriley-fantasy-w3-pilot'])
 @minLength(3)
 @maxLength(60)
 param appName string
@@ -13,13 +14,13 @@ param imageDigest string
 var appKind = 'app,linux'
 
 resource sharedPlan 'Microsoft.Web/serverfarms@2024-11-01' existing = {
-  name: 'ASP-WRG3-2'
-  scope: resourceGroup('b9ee5d35-c096-4772-8a56-0529054b4dcf', 'WebResourceGroup2')
+  name: 'ff-w3-pilot-plan'
+  scope: resourceGroup('b9ee5d35-c096-4772-8a56-0529054b4dcf', 'ff-westus3-pilot')
 }
 
 resource parent 'Microsoft.Web/sites@2024-11-01' = {
   name: appName
-  location: 'eastus'
+  location: 'westus3'
   kind: appKind
   properties: {
     serverFarmId: sharedPlan.id
@@ -41,7 +42,7 @@ resource parent 'Microsoft.Web/sites@2024-11-01' = {
 resource stage 'Microsoft.Web/sites/slots@2024-11-01' = {
   parent: parent
   name: 'stage'
-  location: 'eastus'
+  location: 'westus3'
   kind: appKind
   properties: {
     serverFarmId: sharedPlan.id
@@ -65,16 +66,17 @@ resource stage 'Microsoft.Web/sites/slots@2024-11-01' = {
 }
 
 // Configure after creation to use Azure's real hostname, including newer unique DNS names.
+// Preserve the separately provisioned read-only PostgreSQL connection settings.
 resource stageSettings 'Microsoft.Web/sites/slots/config@2024-11-01' = {
   parent: stage
   name: 'appsettings'
-  properties: {
+  properties: union(list('${stage.id}/config/appsettings', '2024-11-01').properties, {
     FFOPT_HOSTING_ENVIRONMENT: 'stage'
     FFOPT_HOSTING_ALLOWED_HOSTS: stage.properties.defaultHostName
     WEBSITES_PORT: '8080'
     WEBSITES_ENABLE_APP_SERVICE_STORAGE: 'false'
     DOCKER_REGISTRY_SERVER_URL: 'https://ghcr.io'
-  }
+  })
 }
 
 resource stickySettings 'Microsoft.Web/sites/config@2024-11-01' = {
