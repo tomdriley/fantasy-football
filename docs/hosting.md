@@ -6,7 +6,8 @@ CLI, API, SQLite stores and React application are unchanged.
 The original staging probe passed an A/B/A deployment-and-rollback rehearsal on
 September 12, 2026; see the [historical release ledger](hosting-azure.md#verified-live-target).
 The retained [WestUS3 stage](https://thomasriley-fantasy-w3-pilot-stage.azurewebsites.net/fantasy-football/)
-uses private, synthetic read-only PostgreSQL. Its production parent remains
+uses private PostgreSQL with a retained read-only sample role and a separate
+protected synthetic-marker writer. Its production parent remains
 disabled and publicly blocked. See [current operations](production-operations.md).
 
 The checkpoints remain deliberately separate:
@@ -16,15 +17,17 @@ The checkpoints remain deliberately separate:
 2. Private PostgreSQL with an application role that can only read synthetic rows.
 3. Deployed September 13, 2026: Azure-managed Google sign-in. The user confirmed
    login, private enrollment/approval, sample access and logout; no live database writes.
-4. [Protected synthetic marker](hosting-write.md): implemented locally, awaiting
-   independent review, private candidate CI and approved deployment. A database
-   restore drill remains a separate gate.
+4. [Protected synthetic marker](hosting-write.md): deployed September 13, 2026
+   after scoped review, private CI and isolated writer provisioning. Ready for
+   the user's first button → duplicate/reload → logout test; no account marker
+   was seeded. A database restore drill remains a separate gate.
 
 The [Google authentication-only checkpoint](hosting-authentication.md) is
 enabled in Azure and has passed live anonymous/forged-header checks and the
 user's browser checkpoint. The new `authenticated-write` phase enables only one
-immutable synthetic marker per approved account when explicitly configured;
-it is not yet deployed. There are no workers, league configuration or real data.
+immutable synthetic marker per approved account. Its cloud configuration and
+anonymous/forged denials are verified; the actual authenticated write remains
+pending the user's button test. There are no workers, league configuration or real data.
 No website proxy, production deployment, slot swap, or repository publication is
 part of this checkpoint.
 
