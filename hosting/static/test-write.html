@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Protected synthetic write test</title>
+    <script src="/fantasy-football/static/test-write.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <h1>Protected synthetic write test</h1>
+      <p>This records one fixed synthetic marker for your approved account. Repeating
+        the operation returns the same marker and original database timestamp.
+        No real league data or free text are stored.</p>
+      <button id="record" type="button" disabled>Record test write</button>
+      <p id="status" role="status" aria-live="polite">Checking your marker…</p>
+      <p><a href="/fantasy-football/">Hosting foundation</a></p>
+      <p><a href="/.auth/logout?post_logout_redirect_uri=/fantasy-football/">Sign out</a></p>
+    </main>
+  </body>
+</html>

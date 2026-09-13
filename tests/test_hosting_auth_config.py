@@ -5,7 +5,7 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from hosting.auth import AUTH_CAPABILITY, PUBLIC_PATHS
+from hosting.auth import AUTH_CAPABILITY, PUBLIC_PATHS, WRITE_PHASE
 from scripts import check_hosting_auth_config as config
 
 CLIENT_ID = "1234567890-example.apps.googleusercontent.com"
@@ -40,8 +40,41 @@ def approved_config():
 class TestHostingAuthConfig(unittest.TestCase):
     def test_approved_config_and_shared_constants_match(self):
         config.validate_config(approved_config(), config.AUTH_PHASE, CLIENT_ID, AUTH_CAPABILITY)
+        config.validate_config(approved_config(), WRITE_PHASE, CLIENT_ID, AUTH_CAPABILITY)
         self.assertEqual(config.PUBLIC_PATHS, PUBLIC_PATHS)
         self.assertEqual(config.AUTH_LOCK, AUTH_CAPABILITY)
+        self.assertEqual(config.WRITE_PHASE, WRITE_PHASE)
+
+    def test_write_phase_does_not_expand_public_paths_or_weaken_auth(self):
+        for path in ("/fantasy-football/api/test-write", "/fantasy-football/test-write",
+                     "/fantasy-football/static/test-write.js"):
+            payload = approved_config()
+            payload["properties"]["globalValidation"]["excludedPaths"].append(path)
+            with self.assertRaises(config.InvalidAuthConfig):
+                config.validate_config(payload, WRITE_PHASE, CLIENT_ID, AUTH_CAPABILITY)
+        for key in ("platform", "globalValidation", "login"):
+            payload = approved_config()
+            payload["properties"][key] = {}
+            with self.assertRaises(config.InvalidAuthConfig):
+                config.validate_config(payload, WRITE_PHASE, CLIENT_ID, AUTH_CAPABILITY)
+
+    def test_writer_settings_template_preserves_existing_enrollment_and_reader(self):
+        text = (ROOT / "infra/azure/stage-write-settings.bicep").read_text()
+        self.assertIn("@secure()\nparam existingAppSettings object", text)
+        self.assertIn("union(existingAppSettings, {", text)
+        self.assertNotIn("param authorization", text)
+        self.assertNotIn("FFOPT_AUTH_ALLOWED_IDENTITIES:", text)
+        self.assertNotIn("GOOGLE_PROVIDER_AUTHENTICATION_SECRET:", text)
+        self.assertNotIn("FFOPT_DB_USER:", text)
+        self.assertIn("FFOPT_HOSTING_PHASE: 'authenticated-write'", text)
+        self.assertIn("FFOPT_WRITE_DB_HOST: existingAppSettings.FFOPT_DB_HOST", text)
+        self.assertIn("FFOPT_WRITE_DB_NAME: existingAppSettings.FFOPT_DB_NAME", text)
+        self.assertIn("FFOPT_WRITE_DB_USER: 'ffopt_stage_probe_writer'", text)
+        self.assertIn("param writerSecretName string = 'pg-write-probe-password'", text)
+        self.assertIn("scope: secret", text)
+        self.assertIn("principalId: stage.identity.principalId", text)
+        self.assertNotIn("listSecrets", text)
+        self.assertNotIn("slotConfigNames", text)
 
     def test_azure_unused_provider_defaults_must_be_explicitly_disabled(self):
         payload = approved_config()

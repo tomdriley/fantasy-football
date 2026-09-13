@@ -1,4 +1,4 @@
-"""A read-only hosting probe; database access is an explicit synthetic-only phase."""
+"""Gated hosting probes; no advisor or real league data."""
 
 from __future__ import annotations
 
@@ -18,7 +18,9 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from .database import DatabaseSettings, DatabaseUnavailable, PostgresSampleReader, create_reader
-from .auth import AUTH_PHASE, GoogleAuthorization, Identity, SESSION_PATH, SIGN_IN_URL, parse_allowlist
+from .auth import AUTH_PHASE, AUTH_PHASES, WRITE_PHASE, GoogleAuthorization, Identity, SESSION_PATH, SIGN_IN_URL, parse_allowlist
+from .write import WRITE_PATH, WRITE_PAGE, install_write_routes
+from .write_database import PostgresMarkerStore, create_writer, writer_settings
 
 LOG = logging.getLogger(__name__)
 BASE_PATH = "/fantasy-football"
@@ -41,16 +43,16 @@ class Settings:
     def __post_init__(self):
         if self.environment not in ("local", "stage"):
             raise ValueError("hosting environment must be local or stage")
-        if self.phase not in ("deployment", "database-readonly", AUTH_PHASE):
-            raise ValueError("hosting phase must be deployment, database-readonly or authentication-only")
-        if self.phase == AUTH_PHASE and self.environment != "stage":
-            raise ValueError("authentication-only trusts only the stage Easy Auth origin")
+        if self.phase not in ("deployment", "database-readonly", *AUTH_PHASES):
+            raise ValueError("Invalid hosting phase.")
+        if self.phase in AUTH_PHASES and self.environment != "stage":
+            raise ValueError("Authenticated phases trust only the stage Easy Auth origin")
         if not isinstance(self.auth_allowlist, frozenset) or any(
             not isinstance(identity, Identity) for identity in self.auth_allowlist
         ):
             raise ValueError("authentication allowlist must be immutable provider/subject identities")
-        if self.auth_allowlist and self.phase != AUTH_PHASE:
-            raise ValueError("authentication allowlist requires the authentication-only phase")
+        if self.auth_allowlist and self.phase not in AUTH_PHASES:
+            raise ValueError("authentication allowlist requires an authenticated phase")
         if not RELEASE_PATTERN.fullmatch(self.release):
             raise ValueError("hosting release must be a lowercase commit SHA or development")
         if self.environment == "stage" and self.release == "development":
@@ -65,16 +67,20 @@ class Settings:
             for host in self.allowed_hosts
         ):
             raise ValueError("stage requires its real hostname, not local test hosts")
+        if self.phase == WRITE_PHASE and len(self.allowed_hosts) != 1:
+            raise ValueError("The write phase requires exactly one explicit HTTPS origin host.")
 
     @classmethod
     def from_environment(cls, values: Mapping[str, str] | None = None) -> Settings:
         values = os.environ if values is None else values
         environment = values.get("FFOPT_HOSTING_ENVIRONMENT", "local")
         phase = values.get("FFOPT_HOSTING_PHASE", "deployment")
-        if phase != AUTH_PHASE and any(
+        if phase not in AUTH_PHASES and any(
             key in values for key in ("FFOPT_AUTH_ALLOWED_IDENTITIES", "GOOGLE_PROVIDER_AUTHENTICATION_SECRET")
         ):
             raise ValueError("Authentication settings cannot be used with a legacy hosting phase.")
+        if phase != WRITE_PHASE and any(key.startswith("FFOPT_WRITE_") for key in values):
+            raise ValueError("Writer settings require the authenticated-write phase.")
         hosts = values.get("FFOPT_HOSTING_ALLOWED_HOSTS")
         if hosts is None and environment == "stage":
             raise ValueError("FFOPT_HOSTING_ALLOWED_HOSTS is required in stage")
@@ -91,14 +97,16 @@ class Settings:
 
 
 class ReadOnlyBoundary:
-    def __init__(self, app: ASGIApp, *, stage: bool):
+    def __init__(self, app: ASGIApp, *, stage: bool, writes: bool = False):
         self.app = app
+        self.writes = writes
         self.headers = (
             (b"cache-control", b"no-store"),
             (b"x-content-type-options", b"nosniff"),
             (b"referrer-policy", b"no-referrer"),
             (b"content-security-policy",
-             b"default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"),
+             b"default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+             + (b"; script-src 'self'; connect-src 'self'" if writes else b"")),
         )
         if stage:
             self.headers += ((b"strict-transport-security", b"max-age=31536000"),)
@@ -112,14 +120,15 @@ class ReadOnlyBoundary:
                 message = {**message, "headers": [*message.get("headers", []), *self.headers]}
             await send(message)
 
-        if scope["method"] not in ("GET", "HEAD"):
+        write_request = self.writes and scope["method"] == "POST" and scope["path"] == WRITE_PATH
+        if scope["method"] not in ("GET", "HEAD") and not write_request:
             response = JSONResponse(
                 {"error": "This deployment probe has no write operations."},
                 status_code=405, headers={"Allow": "GET, HEAD"},
             )
             return await response(scope, receive, secure_send)
-        # No endpoint consumes a body. Reject advertised bodies without buffering.
-        if any(
+        # The sole POST route validates and bounds the body while streaming it.
+        if not write_request and any(
             key.lower() == b"transfer-encoding"
             or (key.lower() == b"content-length" and value != b"0")
             for key, value in scope.get("headers", [])
@@ -133,13 +142,21 @@ class ReadOnlyBoundary:
 
 def create_app(
     settings: Settings | None = None, *, reader: PostgresSampleReader | None = None,
+    writer: PostgresMarkerStore | None = None,
 ) -> FastAPI:
     settings = settings if settings is not None else Settings.from_environment()
-    if settings.phase in ("database-readonly", AUTH_PHASE):
+    if settings.phase in ("database-readonly", *AUTH_PHASES):
         reader = reader if reader is not None else create_reader(DatabaseSettings.from_environment(settings.environment))
     elif reader is not None or any(name.startswith("FFOPT_DB_") for name in os.environ):
         raise ValueError("Database settings require the database-readonly or authentication-only phase.")
+    if settings.phase == WRITE_PHASE:
+        writer = writer if writer is not None else create_writer(writer_settings(settings.environment))
+    elif writer is not None or any(name.startswith("FFOPT_WRITE_") for name in os.environ):
+        raise ValueError("Writer settings require the authenticated-write phase.")
     description = (
+        "Approved Google accounts may record one immutable synthetic test marker. "
+        "No free text, advisor, or real league data are enabled."
+        if settings.phase == WRITE_PHASE else
         "Google sign-in identifies your account; only operator-allowlisted provider subjects "
         "may read the synthetic sample. No application writes, advisor, or real league data are enabled."
         if settings.phase == AUTH_PHASE else
@@ -163,8 +180,9 @@ def create_app(
         auth_link=(
             f'<p><a href="{html.escape(SIGN_IN_URL, quote=True)}">Sign in with Google</a></p>'
             f'<p><a href="{SESSION_PATH}">Check your own sign-in and access</a></p>'
-            if settings.phase == AUTH_PHASE else ""
+            if settings.phase in AUTH_PHASES else ""
         ),
+        write_link=f'<p><a href="{WRITE_PAGE}">Protected synthetic write test</a></p>' if writer is not None else "",
     )
 
     @asynccontextmanager
@@ -172,7 +190,13 @@ def create_app(
         if reader is not None:
             reader.open()
         try:
-            yield
+            if writer is not None:
+                writer.open()
+            try:
+                yield
+            finally:
+                if writer is not None:
+                    writer.close()
         finally:
             if reader is not None:
                 reader.close()
@@ -182,16 +206,16 @@ def create_app(
         redirect_slashes=False,
         lifespan=lifespan,
     )
-    if settings.phase == AUTH_PHASE:
+    if settings.phase in AUTH_PHASES:
         app.add_middleware(GoogleAuthorization, allowlist=settings.auth_allowlist)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts, www_redirect=False)
-    app.add_middleware(ReadOnlyBoundary, stage=settings.environment == "stage")
+    app.add_middleware(ReadOnlyBoundary, stage=settings.environment == "stage", writes=writer is not None)
 
     @app.exception_handler(DatabaseUnavailable)
     async def unavailable(request, exc):
-        LOG.warning("Synthetic database read unavailable: %s", exc.code)
+        LOG.warning("Synthetic database probe unavailable: %s", exc.code)
         return JSONResponse(
-            {"error": "database_unavailable", "message": "Synthetic database reads are unavailable."},
+            {"error": "database_unavailable", "message": "Synthetic database probes are unavailable."},
             status_code=503,
         )
 
@@ -203,6 +227,8 @@ def create_app(
     def ready():
         if reader is not None:
             reader.sample()
+        if writer is not None:
+            writer.check()
         return {"status": "ready"}
 
     @app.api_route(BASE_PATH, methods=["GET", "HEAD"], include_in_schema=False)
@@ -222,7 +248,7 @@ def create_app(
             "phase": settings.phase,
         }
 
-    if settings.phase == AUTH_PHASE:
+    if settings.phase in AUTH_PHASES:
         @app.api_route(SESSION_PATH, methods=["GET", "HEAD"], include_in_schema=False)
         def session(request: Request):
             identity = request.state.hosting_identity
@@ -236,5 +262,8 @@ def create_app(
         @app.api_route(f"{BASE_PATH}/api/sample", methods=["GET", "HEAD"], include_in_schema=False)
         def sample():
             return reader.sample()
+
+    if writer is not None:
+        install_write_routes(app, writer, f"https://{settings.allowed_hosts[0]}", settings.auth_allowlist)
 
     return app

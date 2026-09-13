@@ -14,6 +14,8 @@ from urllib import error, parse, request
 
 MAX_RESPONSE_BYTES = 65536
 AUTH_PHASE = "authentication-only"
+WRITE_PHASE = "authenticated-write"
+AUTH_PHASES = (AUTH_PHASE, WRITE_PHASE)
 
 
 class CheckFailed(ValueError):
@@ -67,7 +69,7 @@ def fetch(opener: request.OpenerDirector, url: str, content_type: str) -> bytes:
     return body
 
 
-def check_anonymous_denial(opener, base: str, path: str, *, forged: bool = False):
+def check_anonymous_denial(opener, base: str, path: str, *, forged: bool = False, method: str = "GET"):
     headers = {"Accept": "application/json"}
     if forged:
         subject = "100000000000000000000"
@@ -80,8 +82,12 @@ def check_anonymous_denial(opener, base: str, path: str, *, forged: bool = False
                 "name_typ": "name", "role_typ": "role",
             }).encode()).decode("ascii"),
         })
+    data = None
+    if method == "POST":
+        headers.update({"Origin": base, "Content-Type": "application/json", "X-FFOPT-Write": "record-v1"})
+        data = b'{"action":"record"}'
     try:
-        with opener.open(request.Request(base + path, headers=headers), timeout=10):
+        with opener.open(request.Request(base + path, headers=headers, method=method, data=data), timeout=10):
             raise CheckFailed(f"{path}: unauthenticated request was not denied.")
     except error.HTTPError as exc:
         exc.close()
@@ -100,9 +106,9 @@ def check_release(
         raise CheckFailed("Expected release must be a lowercase commit SHA or development.")
     if environment not in ("local", "stage") or (environment == "stage" and release == "development"):
         raise CheckFailed("Use local or stage; stage requires a commit SHA.")
-    if expected_phase not in ("deployment", "database-readonly", AUTH_PHASE):
-        raise CheckFailed("Expected phase must be deployment, database-readonly or authentication-only.")
-    if expected_phase == AUTH_PHASE and (environment != "stage" or allow_http):
+    if expected_phase not in ("deployment", "database-readonly", *AUTH_PHASES):
+        raise CheckFailed("Invalid expected hosting phase.")
+    if expected_phase in AUTH_PHASES and (environment != "stage" or allow_http):
         raise CheckFailed("Authentication checks require the HTTPS stage Easy Auth origin.")
     opener = request.build_opener(NoRedirects)
     expected = {
@@ -145,12 +151,23 @@ def check_release(
             raise CheckFailed("Page does not identify the expected deployment or prefix.")
     if expected_phase == "database-readonly" and 'href="/fantasy-football/api/sample"' not in page:
         raise CheckFailed("Page does not link to the database sample.")
-    if expected_phase == AUTH_PHASE:
+    if expected_phase in AUTH_PHASES:
         if 'href="/.auth/login/google?post_login_redirect_uri=/fantasy-football/api/session"' not in page:
             raise CheckFailed("Page does not link to managed Google sign-in.")
-        for path in ("/fantasy-football/api/session", "/fantasy-football/api/sample"):
+        protected = ["/fantasy-football/api/session", "/fantasy-football/api/sample"]
+        if expected_phase == WRITE_PHASE:
+            protected += [
+                "/fantasy-football/api/test-write", "/fantasy-football/test-write",
+                "/fantasy-football/static/test-write.js",
+            ]
+            if 'href="/fantasy-football/test-write"' not in page:
+                raise CheckFailed("Page does not link to the protected write probe.")
+        for path in protected:
             check_anonymous_denial(opener, base, path)
             check_anonymous_denial(opener, base, path, forged=True)
+        if expected_phase == WRITE_PHASE:
+            for forged in (False, True):
+                check_anonymous_denial(opener, base, "/fantasy-football/api/test-write", forged=forged, method="POST")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -158,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("url", help="app origin, e.g. https://the-stage-host.azurewebsites.net")
     parser.add_argument("--expected-release", required=True)
     parser.add_argument("--expected-environment", choices=("local", "stage"), default="stage")
-    parser.add_argument("--expected-phase", choices=("deployment", "database-readonly", AUTH_PHASE), default="deployment")
+    parser.add_argument("--expected-phase", choices=("deployment", "database-readonly", *AUTH_PHASES), default="deployment")
     parser.add_argument("--allow-http", action="store_true", help="permit HTTP for loopback only")
     parser.add_argument("--attempts", type=int, default=1, choices=range(1, 61), metavar="1..60")
     args = parser.parse_args(argv)

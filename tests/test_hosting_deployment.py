@@ -59,6 +59,8 @@ docker() {
     printf '%s\n' "$MOCK_RELEASE"
   elif [[ "$*" == *'io.ffopt.hosting.authentication'* ]]; then
     printf '%s\n' "$MOCK_AUTH_CAPABILITY"
+  elif [[ "$*" == *'io.ffopt.hosting.write'* ]]; then
+    printf '%s\n' "$MOCK_WRITE_CAPABILITY"
   elif [[ "$1" == run ]]; then
     if [[ "$MOCK_RUN_STATUS" != 0 ]]; then
       printf 'Container name already belongs to another container.\n' >&2
@@ -116,6 +118,7 @@ class TestHostingDeployment(unittest.TestCase):
             "MOCK_POST_AUTH_STATUS": "0",
             "MOCK_IMAGE_PATCHED": "0",
             "MOCK_AUTH_CAPABILITY": "google-allowlist-v1",
+            "MOCK_WRITE_CAPABILITY": "synthetic-marker-v1",
         }
         environment.update(overrides)
         return subprocess.run(
@@ -224,6 +227,32 @@ class TestHostingDeployment(unittest.TestCase):
         self.assertIn("/config/authsettingsV2?", calls[1][calls[1].index("--url") + 1])
         self.assertIn("/config/authsettingsV2?", calls[-1][calls[-1].index("--url") + 1])
 
+    def test_write_phase_requires_both_locks_and_both_image_capabilities(self):
+        environment = {
+            "FFOPT_STAGE_AUTH_LOCK": "google-allowlist-v1",
+            "FFOPT_STAGE_WRITE_LOCK": "synthetic-marker-v1",
+            "FFOPT_STAGE_GOOGLE_CLIENT_ID": "123-example.apps.googleusercontent.com",
+        }
+        result = self.run_script("deploy-stage.sh", [APP, SHA, DIGEST, "authenticated-write"], **environment)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.smoke_calls(result)[0][-2:], ["--expected-phase", "authenticated-write"])
+        for overrides in (
+            {"FFOPT_STAGE_AUTH_LOCK": ""}, {"FFOPT_STAGE_WRITE_LOCK": ""},
+            {"FFOPT_STAGE_WRITE_LOCK": "other"}, {"MOCK_WRITE_CAPABILITY": ""},
+            {"MOCK_AUTH_CAPABILITY": ""}, {"MOCK_AUTH_STATUS": "1"},
+        ):
+            result = self.run_script(
+                "deploy-stage.sh", [APP, SHA, DIGEST, "authenticated-write"], **{**environment, **overrides},
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse([call for call in self.calls(result, "az") if "patch" in call])
+        result = self.run_script("deploy-stage.sh", [APP, SHA, DIGEST, "authentication-only"], **environment)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.calls(result, "az"))
+        for capability in ("", "other", "synthetic-marker-v1"):
+            result = self.run_script("check-image.sh", [IMAGE, SHA, "authenticated-write"],
+                                     MOCK_WRITE_CAPABILITY=capability)
+            self.assertEqual(result.returncode == 0, capability == "synthetic-marker-v1", result.stderr)
     def test_missing_lock_legacy_phase_bad_config_or_legacy_image_never_writes(self):
         cases = [
             ("authentication-only", {}),
@@ -431,6 +460,14 @@ class TestHostingDeployment(unittest.TestCase):
             ({"FFOPT_STAGE_AUTH_LOCK": "google-allowlist-v1"}, False),
             ({"EXPECTED_PHASE": "authentication-only", "FFOPT_STAGE_AUTH_LOCK": "google-allowlist-v1",
               "FFOPT_STAGE_GOOGLE_CLIENT_ID": "123-example.apps.googleusercontent.com"}, True),
+            ({"EXPECTED_PHASE": "authenticated-write", "FFOPT_STAGE_AUTH_LOCK": "google-allowlist-v1",
+              "FFOPT_STAGE_GOOGLE_CLIENT_ID": "123-example.apps.googleusercontent.com"}, False),
+            ({"EXPECTED_PHASE": "authenticated-write", "FFOPT_STAGE_AUTH_LOCK": "google-allowlist-v1",
+              "FFOPT_STAGE_WRITE_LOCK": "synthetic-marker-v1",
+              "FFOPT_STAGE_GOOGLE_CLIENT_ID": "123-example.apps.googleusercontent.com"}, True),
+            ({"EXPECTED_PHASE": "authentication-only", "FFOPT_STAGE_AUTH_LOCK": "google-allowlist-v1",
+              "FFOPT_STAGE_WRITE_LOCK": "synthetic-marker-v1",
+              "FFOPT_STAGE_GOOGLE_CLIENT_ID": "123-example.apps.googleusercontent.com"}, False),
             ({"EXPECTED_PHASE": ""}, False),
             ({"EXPECTED_PHASE": "invalid"}, False),
             ({"EXPECTED_PHASE": "database-readonly;echo unexpected"}, False),
@@ -448,7 +485,7 @@ class TestHostingDeployment(unittest.TestCase):
         phase = workflow["on"]["workflow_dispatch"]["inputs"]["expected_phase"]
         self.assertEqual(phase["type"], "choice")
         self.assertEqual(phase["default"], "database-readonly")
-        self.assertEqual(phase["options"], ["deployment", "database-readonly", "authentication-only"])
+        self.assertEqual(phase["options"], ["deployment", "database-readonly", "authentication-only", "authenticated-write"])
         deploy = workflow["jobs"]["digest-deploy"]
         self.assertEqual(deploy["env"]["EXPECTED_PHASE"], "${{ inputs.expected_phase }}")
         self.assertIn('"$IMAGE_DIGEST" "$EXPECTED_PHASE"', deploy["steps"][-1]["run"])

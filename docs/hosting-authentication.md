@@ -1,6 +1,16 @@
 # Google authentication-only checkpoint
 
-**Deployed September 13, 2026; ready for the operator's first Google login.**
+**Deployed September 13, 2026; user browser checkpoint subsequently confirmed.**
+The user confirmed Google login, private enrollment/approval, protected sample
+and logout. The approved provider/subject remains only in private stage settings.
+The [protected synthetic write implementation](hosting-write.md) is local only;
+it does not change the running authentication-only release.
+**Do not reapply the auth settings template's default empty authorization over
+the currently enrolled allowlist.** Use the dedicated writer snapshot template
+for the next checkpoint.
+
+### Original deployment evidence (before enrollment)
+
 Managed authentication and the live anonymous/forged-header boundary are verified.
 The initial allowlist remains **empty**: a signed-in account can see only its own
 session identity, not the synthetic sample. Actual Google account sign-in,
@@ -76,7 +86,7 @@ confirmed:
   Successful callback return-URL enforcement is **not** established by those
   pre-login probes and remains a browser completion gate.
 
-### First user action
+### Historical first user action (now completed)
 
 [Sign in once with Google](https://thomasriley-fantasy-w3-pilot-stage.azurewebsites.net/.auth/login/google?post_login_redirect_uri=/fantasy-football/api/session).
 The expected successful result is your own provider/subject with
@@ -87,7 +97,8 @@ Nothing in this checkpoint enables writes or authorizes advisor migration.
 
 ## Boundary and configuration
 
-Only `FFOPT_HOSTING_PHASE=authentication-only` with
+Only the authenticated phases (`FFOPT_HOSTING_PHASE=authentication-only` or the
+separately configured [authenticated-write phase](hosting-write.md)) with
 `FFOPT_HOSTING_ENVIRONMENT=stage` trusts Easy Auth identity. Local and legacy
 phases do not parse identity headers or expose a session endpoint. The existing
 `deployment` and `database-readonly` behavior is unchanged until explicitly

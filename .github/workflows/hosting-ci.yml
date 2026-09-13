@@ -53,6 +53,7 @@ jobs:
           az bicep build --file infra/azure/bootstrap.bicep --stdout > /dev/null
           az bicep build --file infra/azure/stage-auth.bicep --stdout > /dev/null
           az bicep build --file infra/azure/stage-auth-settings.bicep --stdout > /dev/null
+          az bicep build --file infra/azure/stage-write-settings.bicep --stdout > /dev/null
           bash -n infra/azure/check-image.sh infra/azure/deploy-stage.sh
       - name: Build and smoke-test the non-root container without publication
         run: |
