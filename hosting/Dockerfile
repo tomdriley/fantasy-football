@@ -7,10 +7,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     FFOPT_HOSTING_RELEASE=${RELEASE}
 LABEL org.opencontainers.image.title="Fantasy football hosting probe" \
       org.opencontainers.image.revision=${RELEASE} \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
       io.ffopt.hosting.authentication="google-allowlist-v1" \
       io.ffopt.hosting.write="synthetic-marker-v1"
 
 WORKDIR /app
+COPY LICENSE /usr/share/licenses/fantasy-football/AGPL-3.0.txt
 COPY requirements.txt requirements.lock ./
 RUN python -m pip install --no-cache-dir -r requirements.txt -c requirements.lock \
     && groupadd --gid 10001 hosting \

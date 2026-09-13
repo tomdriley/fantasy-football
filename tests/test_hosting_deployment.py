@@ -99,6 +99,20 @@ export -f trace az docker python3 timeout sleep
 
 @unittest.skipUnless(BASH, "Deployment scripts require Bash")
 class TestHostingDeployment(unittest.TestCase):
+    def test_license_metadata_and_container_notice_agree(self):
+        license_text = (ROOT / "LICENSE").read_text()
+        self.assertIn("GNU AFFERO GENERAL PUBLIC LICENSE", license_text)
+        self.assertIn("Version 3, 19 November 2007", license_text)
+        for name in ("package.json", "package-lock.json"):
+            package = json.loads((ROOT / "web/season" / name).read_text())
+            if name == "package-lock.json":
+                package = package["packages"][""]
+            self.assertEqual(package["license"], "AGPL-3.0-only")
+        dockerfile = (ROOT / "hosting/Dockerfile").read_text()
+        self.assertIn('org.opencontainers.image.licenses="AGPL-3.0-only"', dockerfile)
+        self.assertIn("COPY LICENSE /usr/share/licenses/fantasy-football/AGPL-3.0.txt", dockerfile)
+        self.assertIn("!LICENSE", (ROOT / ".dockerignore").read_text().splitlines())
+
     def run_script(self, name, args, **overrides):
         environment = {
             "PATH": "",
